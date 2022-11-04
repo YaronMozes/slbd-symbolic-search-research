@@ -98,6 +98,8 @@ void SymVariables::init(const vector <int> &v_order) {
     _manager->setHandler(exceptionError);
     _manager->setTimeoutHandler(exceptionError);
     _manager->setNodesExceededHandler(exceptionError);
+    _manager->RegisterOutOfMemoryCallback(exitOutOfMemory);
+
 
     cout << "Generating binary variables" << endl;
     //Generate binary_variables
@@ -133,6 +135,7 @@ void SymVariables::init(const vector <int> &v_order) {
     }
 
     binState.resize(_numBDDVars, 0);
+    binStateChar.resize(_numBDDVars, 0);
     cout << "Symbolic Variables... Done." << endl;
 
     /*  for(int i = 0; i < g_variable_domain.size(); i++){
@@ -261,6 +264,32 @@ BDD SymVariables::getCube(const set <int> &vars, const vector<vector<int>> &v_in
     return res;
 }
 
+vector<int> SymVariables::sample_state (const BDD &  bdd) const {
+    bdd.PickOneCube(&(binStateChar[0]));
+    return getStateDescription(binStateChar);
+}
+
+
+std::vector<int> SymVariables::getStateDescription(const vector<char> & binary_state) const {
+    vector<int> state(var_order.size(), 0);
+
+    for (int v : var_order) {
+        for (int j = bdd_index_pre[v].size() -1; j >= 0; --j) {
+            int bdd_v = bdd_index_pre[v][j];
+            assert (binary_state[bdd_v] == 0 || binary_state[bdd_v] == 1);
+
+            state[v] *= 2;
+            state[v] += binary_state[bdd_v];
+        }
+
+        assert ((size_t)(state[v]) < g_fact_names[v].size());
+    }
+
+    return state;
+}
+
+
+
 
 void
 exceptionError(string /*message*/) {
@@ -268,6 +297,10 @@ exceptionError(string /*message*/) {
     throw BDDError();
 }
 
+void
+exitOutOfMemory(size_t) {
+    utils::exit_with(utils::ExitCode::OUT_OF_MEMORY);
+}
 
 void SymVariables::print() {
     ofstream file("variables.txt");
