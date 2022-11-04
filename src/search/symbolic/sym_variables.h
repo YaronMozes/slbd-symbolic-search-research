@@ -30,6 +30,8 @@ namespace symbolic {
  */
 struct BDDError {};
 extern void exceptionError(std::string message);
+extern void exitOutOfMemory(size_t memory);
+
 
 class SymVariables {
     // Var order used by the algorithm.
@@ -58,7 +60,8 @@ class SymVariables {
 
     //Vector to store the binary description of an state
     //Avoid allocating memory during heuristic evaluation
-    std::vector <int> binState;
+    mutable std::vector <char> binStateChar; 
+    mutable std::vector <int> binState;
 
     void init(const std::vector <int> &v_order);
 
@@ -195,6 +198,10 @@ public:
 
     void print();
     
+    std::vector<int> getStateDescription(const std::vector<char> & binary_state) const;
+    std::vector<int> sample_state (const BDD &  bdd) const;
+
+
     template <class T> 
     int *getBinaryDescription(const T &state) {
         int pos = 0;
