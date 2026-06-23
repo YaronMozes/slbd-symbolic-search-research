@@ -1,4 +1,4 @@
-#include "symbolic_search.h"
+#include "symbolic_landmark_search.h"
 
 #include "../heuristic.h"
 #include "../landmarks/exploration.h"
@@ -261,63 +261,66 @@ public:
         BidirectionalSearch::statistics();
         refresh_coverage_if_needed();
         landmark_coverage.print_summary();
-        cout << "Landmark guidance decisions: fw=" << guidance_fw_count
-             << ", bw=" << guidance_bw_count
-             << ", fallback=" << fallback_count
+        cout << "Landmark guidance decisions: forward=" << guidance_fw_count
+             << ", backward=" << guidance_bw_count
+             << ", fallback_to_bdd_nodes=" << fallback_count
              << ", total=" << decision_count << endl;
-        cout << "Landmark coverage fw: " << last_fw_coverage.covered
-             << "/" << landmark_coverage.landmark_count()
-             << " landmarks, cost " << last_fw_coverage.covered_cost
+        cout << "Landmark coverage forward: unweighted="
+             << last_fw_coverage.covered << "/"
+             << landmark_coverage.landmark_count()
+             << ", weighted=" << last_fw_coverage.covered_cost
              << "/" << landmark_coverage.landmark_cost_sum() << endl;
-        cout << "Landmark coverage bw: " << last_bw_coverage.covered
-             << "/" << landmark_coverage.landmark_count()
-             << " landmarks, cost " << last_bw_coverage.covered_cost
+        cout << "Landmark coverage backward: unweighted="
+             << last_bw_coverage.covered << "/"
+             << landmark_coverage.landmark_count()
+             << ", weighted=" << last_bw_coverage.covered_cost
              << "/" << landmark_coverage.landmark_cost_sum() << endl;
     }
 };
 }
 
 namespace symbolic_landmark_search {
-class SymbolicLandmarkBidirectionalSearch : public symbolic_search::SymbolicSearch {
-    LandmarkFactory *lm_factory;
-    int lm_node_slack_percent;
-    int lm_eval_frequency;
-    bool lm_guidance;
 
-protected:
-    virtual void initialize() override {
-        mgr = make_shared<OriginalStateSpace>(
-            vars.get(), mgrParams, OperatorCostFunction::get_cost_function());
+void SymbolicLandmarkBidirectionalSearch::initialize() {
+    mgr = make_shared<OriginalStateSpace>(
+        vars.get(), mgrParams, OperatorCostFunction::get_cost_function());
 
-        Exploration exploration(Heuristic::default_options());
-        shared_ptr<LandmarkGraph> landmark_graph = lm_factory->compute_lm_graph(exploration);
-        LandmarkBDDIndex landmark_index(*landmark_graph, *mgr);
+    Exploration exploration(Heuristic::default_options());
+    shared_ptr<LandmarkGraph> landmark_graph = lm_factory->compute_lm_graph(exploration);
+    LandmarkBDDIndex landmark_index(*landmark_graph, *mgr);
 
-        auto fw_search = make_unique<UniformCostSearch>(this, searchParams);
-        auto bw_search = make_unique<UniformCostSearch>(this, searchParams);
-        fw_search->init(mgr, true, bw_search->getClosedShared());
-        bw_search->init(mgr, false, fw_search->getClosedShared());
+    auto fw_search = make_unique<UniformCostSearch>(this, searchParams);
+    auto bw_search = make_unique<UniformCostSearch>(this, searchParams);
+    fw_search->init(mgr, true, bw_search->getClosedShared());
+    bw_search->init(mgr, false, fw_search->getClosedShared());
 
-        search = make_unique<LandmarkGuidedBidirectionalSearch>(
-            this,
-            searchParams,
-            move(fw_search),
-            move(bw_search),
-            move(landmark_index),
-            lm_node_slack_percent,
-            lm_eval_frequency,
-            lm_guidance);
+    search = make_unique<LandmarkGuidedBidirectionalSearch>(
+        this,
+        searchParams,
+        move(fw_search),
+        move(bw_search),
+        move(landmark_index),
+        lm_node_slack_percent,
+        lm_eval_frequency,
+        lm_guidance);
+}
+
+SymbolicLandmarkBidirectionalSearch::SymbolicLandmarkBidirectionalSearch(
+    const Options &opts)
+    : SymbolicSearch(opts),
+      lm_factory(opts.get<LandmarkFactory *>("lm_factory")),
+      lm_node_slack_percent(opts.get<int>("lm_node_slack_percent")),
+      lm_eval_frequency(opts.get<int>("lm_eval_frequency")),
+      lm_guidance(opts.get<bool>("lm_guidance")) {
+}
+
+void SymbolicLandmarkBidirectionalSearch::print_statistics() const {
+    SearchEngine::print_statistics();
+    if (search) {
+        search->statistics();
     }
+}
 
-public:
-    explicit SymbolicLandmarkBidirectionalSearch(const Options &opts)
-        : SymbolicSearch(opts),
-          lm_factory(opts.get<LandmarkFactory *>("lm_factory")),
-          lm_node_slack_percent(opts.get<int>("lm_node_slack_percent")),
-          lm_eval_frequency(opts.get<int>("lm_eval_frequency")),
-          lm_guidance(opts.get<bool>("lm_guidance")) {
-    }
-};
 }
 
 static SearchEngine *_parse_landmark_bidirectional_ucs(OptionParser &parser) {

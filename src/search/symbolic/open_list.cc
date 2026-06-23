@@ -4,6 +4,7 @@
 #include "../utils/debug_macros.h"
 
 #include <cassert>
+#include <limits>
 using namespace std;
 
 namespace symbolic {

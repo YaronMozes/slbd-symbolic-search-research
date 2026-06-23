@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.5)
 
 if(NOT FAST_DOWNWARD_MAIN_CMAKELISTS_READ)
     message(
@@ -81,7 +81,7 @@ if(PLUGIN_SYMBOLIC_ENABLED)
 	libcudd.a
 	PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/cudd-3.0.0
 	SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/cudd-3.0.0
-	CONFIGURE_COMMAND aclocal && automake --add-missing && autoconf && ${CMAKE_CURRENT_SOURCE_DIR}/cudd-3.0.0/configure --enable-obj --build=i686-pc-linux-gnu "CFLAGS=-m32 -Wall -Wextra -g -O3" "CXXFLAGS=-m32 -Wall -Wextra -std=c++0x -g -O3" "LDFLAGS=-m32" && make clean
+	CONFIGURE_COMMAND bash -c "aclocal && automake --add-missing && autoconf && find build-aux -maxdepth 1 -type f -exec sed -i 's/\\r$//' {} + && sed -i 's/\\r$//' configure && ./configure --enable-obj --build=i686-pc-linux-gnu 'CFLAGS=-m32 -Wall -Wextra -g -O3' 'CXXFLAGS=-m32 -Wall -Wextra -std=c++0x -g -O3' 'LDFLAGS=-m32' && sed -i 's/\\r$//' libtool && make clean"
 	BUILD_IN_SOURCE 1
 	)
     elseif(${CMAKE_SIZEOF_VOID_P} EQUAL 8)
@@ -90,7 +90,7 @@ if(PLUGIN_SYMBOLIC_ENABLED)
 	libcudd.a
 	PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/cudd-3.0.0
 	SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/cudd-3.0.0
-	CONFIGURE_COMMAND aclocal && automake --add-missing && autoconf && ${CMAKE_CURRENT_SOURCE_DIR}/cudd-3.0.0/configure --enable-obj --build=i686-pc-linux-gnu "CFLAGS=-m64 -Wall -Wextra -g -O3" "CXXFLAGS=-m64 -Wall -Wextra -std=c++0x -g -O3" "LDFLAGS=-m64" && make clean
+	CONFIGURE_COMMAND bash -c "aclocal && automake --add-missing && autoconf && find build-aux -maxdepth 1 -type f -exec sed -i 's/\\r$//' {} + && sed -i 's/\\r$//' configure && ./configure --enable-obj --build=i686-pc-linux-gnu 'CFLAGS=-m64 -Wall -Wextra -g -O3' 'CXXFLAGS=-m64 -Wall -Wextra -std=c++0x -g -O3' 'LDFLAGS=-m64' && sed -i 's/\\r$//' libtool && make clean"
        INSTALL_COMMAND ls
 	BUILD_IN_SOURCE 1
 	)

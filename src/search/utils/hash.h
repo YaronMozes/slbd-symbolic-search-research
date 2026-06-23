@@ -1,6 +1,7 @@
 #ifndef UTILS_HASH_H
 #define UTILS_HASH_H
 
+#include <cstddef>
 #include <functional>
 #include <utility>
 #include <vector>

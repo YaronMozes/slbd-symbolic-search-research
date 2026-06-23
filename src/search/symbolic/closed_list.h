@@ -5,6 +5,7 @@
 #include "unidirectional_search.h"
 
 #include <vector>
+#include <limits>
 #include <set>
 #include <map>
 

@@ -2,6 +2,7 @@
 
 #include "../globals.h"
 #include "../task_proxy.h"
+#include "../utils/rng.h"
 #include "../causal_graph.h"
 
 
@@ -28,7 +29,7 @@ VariableOrderFinder::VariableOrderFinder(
     if (variable_order_type == CG_GOAL_RANDOM ||
         variable_order_type == RANDOM ||
         !is_first)
-        random_shuffle(remaining_vars.begin(), remaining_vars.end());
+        g_rng()->shuffle(remaining_vars);
 
     is_causal_predecessor.resize(var_count, false);
     is_goal_variable.resize(var_count, false);
@@ -47,7 +48,7 @@ VariableOrderFinder::VariableOrderFinder(VariableOrderType variable_order_type_,
     if (variable_order_type == CG_GOAL_RANDOM ||
         variable_order_type == RANDOM ||
         !is_first)
-        random_shuffle(remaining_vars.begin(), remaining_vars.end());
+        g_rng()->shuffle(remaining_vars);
 
 
     is_causal_predecessor.resize(var_count, false);

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <limits>
 #include "../utils/debug_macros.h"
 
 #include "sym_state_space_manager.h"

@@ -32,7 +32,7 @@ public:
     }
 
 private:
-    Predefinitions<T>() = default;
+    Predefinitions() = default;
     std::map<std::string, T> predefined;
 };
 }

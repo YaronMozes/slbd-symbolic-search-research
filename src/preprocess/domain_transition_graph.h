@@ -15,7 +15,7 @@ public:
     typedef vector<pair<const Variable *, int>> Condition;
 private:
     struct Transition {
-        Transition(int theTarget, int theOp) : target(theTarget), op(theOp) {}
+        Transition(int theTarget, int theOp) : target(theTarget), op(theOp), cost(0) {}
         bool operator==(const Transition &other) const {
             return target == other.target &&
                    op == other.op &&
