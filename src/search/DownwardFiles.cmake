@@ -552,6 +552,14 @@ fast_downward_plugin(
     DEPENDS SYMBOLIC 
 )
 
+fast_downward_plugin(
+    NAME SYMBOLIC_LANDMARK_SEARCH_ENGINE
+    HELP "Landmark-guided symbolic search engine"
+    SOURCES
+        search_engines/symbolic_landmark_search.cc
+    DEPENDS SYMBOLIC LANDMARKS
+)
+
 
 
 

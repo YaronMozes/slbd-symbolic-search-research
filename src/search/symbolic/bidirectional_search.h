@@ -6,11 +6,11 @@
 
 namespace symbolic {
 class BidirectionalSearch : public SymSearch {
-private:
+protected:
     std::unique_ptr<UnidirectionalSearch> fw, bw;
 
     //Returns the best direction to search the bd exp
-    UnidirectionalSearch * selectBestDirection() const;
+    virtual UnidirectionalSearch * selectBestDirection() const;
 
 public:
 
