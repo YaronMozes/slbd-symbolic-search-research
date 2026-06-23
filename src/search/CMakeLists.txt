@@ -75,6 +75,7 @@ endif()
 
 if(PLUGIN_SYMBOLIC_ENABLED)
     include(ExternalProject)
+    set(CUDD_LIBRARY ${CMAKE_CURRENT_SOURCE_DIR}/cudd-3.0.0/cudd/.libs/libcudd.a)
     if(${CMAKE_SIZEOF_VOID_P} EQUAL 4)
       message("libcudd 32-bits build")
       ExternalProject_add(
@@ -82,6 +83,7 @@ if(PLUGIN_SYMBOLIC_ENABLED)
 	PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/cudd-3.0.0
 	SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/cudd-3.0.0
 	CONFIGURE_COMMAND bash -c "aclocal && automake --add-missing && autoconf && find build-aux -maxdepth 1 -type f -exec sed -i 's/\\r$//' {} + && sed -i 's/\\r$//' configure && ./configure --enable-obj --build=i686-pc-linux-gnu 'CFLAGS=-m32 -Wall -Wextra -g -O3' 'CXXFLAGS=-m32 -Wall -Wextra -std=c++0x -g -O3' 'LDFLAGS=-m32' && sed -i 's/\\r$//' libtool && make clean"
+	BUILD_BYPRODUCTS ${CUDD_LIBRARY}
 	BUILD_IN_SOURCE 1
 	)
     elseif(${CMAKE_SIZEOF_VOID_P} EQUAL 8)
@@ -91,6 +93,7 @@ if(PLUGIN_SYMBOLIC_ENABLED)
 	PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/cudd-3.0.0
 	SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/cudd-3.0.0
 	CONFIGURE_COMMAND bash -c "aclocal && automake --add-missing && autoconf && find build-aux -maxdepth 1 -type f -exec sed -i 's/\\r$//' {} + && sed -i 's/\\r$//' configure && ./configure --enable-obj --build=i686-pc-linux-gnu 'CFLAGS=-m64 -Wall -Wextra -g -O3' 'CXXFLAGS=-m64 -Wall -Wextra -std=c++0x -g -O3' 'LDFLAGS=-m64' && sed -i 's/\\r$//' libtool && make clean"
+       BUILD_BYPRODUCTS ${CUDD_LIBRARY}
        INSTALL_COMMAND ls
 	BUILD_IN_SOURCE 1
 	)
@@ -99,5 +102,8 @@ if(PLUGIN_SYMBOLIC_ENABLED)
     endif()
     include_directories(${CMAKE_CURRENT_SOURCE_DIR}/cudd-3.0.0/cudd)
     include_directories(${CMAKE_CURRENT_SOURCE_DIR}/cudd-3.0.0/cplusplus)
-    target_link_libraries(downward ${CMAKE_CURRENT_SOURCE_DIR}/cudd-3.0.0/cudd/.libs/libcudd.a)
+    add_library(cudd STATIC IMPORTED GLOBAL)
+    set_target_properties(cudd PROPERTIES IMPORTED_LOCATION ${CUDD_LIBRARY})
+    add_dependencies(cudd libcudd.a)
+    target_link_libraries(downward cudd)
 endif()

@@ -108,7 +108,7 @@ def parse_output(stdout, returncode, elapsed):
     patterns = [
         ("plan_cost", r"Plan cost: (\d+)"),
         ("plan_length", r"Plan length: (\d+) step"),
-        ("actual_search_time", r"Actual search time: ([0-9.]+)s"),
+        ("actual_search_time", r"Actual search time: ([0-9.eE+-]+)s"),
     ]
     for key, pattern in patterns:
         match = re.search(pattern, stdout)
@@ -121,7 +121,7 @@ def parse_output(stdout, returncode, elapsed):
 
     for direction in ["fw", "bw"]:
         match = re.search(
-            r"Exp %s time: ([0-9.]+)s .*? in ([0-9]+) steps" % direction,
+            r"Exp %s time: ([0-9.eE+-]+)s .*? in ([0-9]+) steps" % direction,
             stdout)
         if match:
             result["%s_time" % direction] = match.group(1)
