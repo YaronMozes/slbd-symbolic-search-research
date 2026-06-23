@@ -17,6 +17,7 @@ class SymbolicLandmarkBidirectionalSearch : public symbolic_search::SymbolicSear
     landmarks::LandmarkFactory *lm_factory;
     int lm_node_slack_percent;
     int lm_eval_frequency;
+    int lm_guidance_score;
     bool lm_guidance;
 
 protected:

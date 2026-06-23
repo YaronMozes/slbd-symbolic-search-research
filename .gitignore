@@ -1,0 +1,10 @@
+/builds/
+__pycache__/
+*.py[cod]
+/output
+/output.sas
+/sas_plan*
+/slbd-comparison.csv
+/slbd-comparison-logs/
+/slbd-results/
+/slbd-validation-*.log

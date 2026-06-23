@@ -28,6 +28,29 @@ using namespace options;
 using namespace symbolic;
 
 namespace {
+enum LandmarkGuidanceScore {
+    SCORE_COVERAGE,
+    SCORE_WEIGHTED
+};
+
+enum FallbackReason {
+    FALLBACK_NODE_SLACK,
+    FALLBACK_EQUAL_SCORE,
+    FALLBACK_DISABLED_OR_NO_LANDMARKS,
+    FALLBACK_NON_SEARCHABLE
+};
+
+const char *get_guidance_score_name(LandmarkGuidanceScore score) {
+    switch (score) {
+    case SCORE_COVERAGE:
+        return "coverage";
+    case SCORE_WEIGHTED:
+        return "weighted";
+    default:
+        return "unknown";
+    }
+}
+
 class LandmarkBDDIndex {
 public:
     struct Entry {
@@ -160,12 +183,19 @@ class LandmarkGuidedBidirectionalSearch : public BidirectionalSearch {
     LandmarkCoverage landmark_coverage;
     int node_slack_percent;
     int eval_frequency;
+    LandmarkGuidanceScore guidance_score;
     bool guidance_enabled;
 
     mutable int decision_count;
     mutable int guidance_fw_count;
     mutable int guidance_bw_count;
     mutable int fallback_count;
+    mutable int guidance_evaluated_count;
+    mutable int coverage_recomputation_count;
+    mutable int fallback_node_slack_count;
+    mutable int fallback_equal_score_count;
+    mutable int fallback_disabled_or_no_landmarks_count;
+    mutable int fallback_non_searchable_count;
     mutable LandmarkCoverageSnapshot last_fw_coverage;
     mutable LandmarkCoverageSnapshot last_bw_coverage;
     mutable bool have_coverage;
@@ -183,12 +213,51 @@ class LandmarkGuidedBidirectionalSearch : public BidirectionalSearch {
         if (!have_coverage || decision_count % eval_frequency == 0) {
             last_fw_coverage = landmark_coverage.compute(getFw()->get_seen_states(true));
             last_bw_coverage = landmark_coverage.compute(getBw()->get_seen_states(false));
+            ++coverage_recomputation_count;
             have_coverage = true;
         }
     }
 
-    UnidirectionalSearch *select_by_fallback() const {
+    void count_fallback_reason(FallbackReason reason) const {
+        switch (reason) {
+        case FALLBACK_NODE_SLACK:
+            ++fallback_node_slack_count;
+            break;
+        case FALLBACK_EQUAL_SCORE:
+            ++fallback_equal_score_count;
+            break;
+        case FALLBACK_DISABLED_OR_NO_LANDMARKS:
+            ++fallback_disabled_or_no_landmarks_count;
+            break;
+        case FALLBACK_NON_SEARCHABLE:
+            ++fallback_non_searchable_count;
+            break;
+        }
+    }
+
+    int compare_landmark_scores() const {
+        if (guidance_score == SCORE_WEIGHTED) {
+            if (last_fw_coverage.covered_cost != last_bw_coverage.covered_cost) {
+                return last_fw_coverage.covered_cost < last_bw_coverage.covered_cost ? -1 : 1;
+            }
+            if (last_fw_coverage.covered != last_bw_coverage.covered) {
+                return last_fw_coverage.covered < last_bw_coverage.covered ? -1 : 1;
+            }
+            return 0;
+        }
+
+        if (last_fw_coverage.covered != last_bw_coverage.covered) {
+            return last_fw_coverage.covered < last_bw_coverage.covered ? -1 : 1;
+        }
+        if (last_fw_coverage.covered_cost != last_bw_coverage.covered_cost) {
+            return last_fw_coverage.covered_cost < last_bw_coverage.covered_cost ? -1 : 1;
+        }
+        return 0;
+    }
+
+    UnidirectionalSearch *select_by_fallback(FallbackReason reason) const {
         ++fallback_count;
+        count_fallback_reason(reason);
         return BidirectionalSearch::selectBestDirection();
     }
 
@@ -199,39 +268,39 @@ protected:
         bool fw_searchable = getFw()->isSearchable();
         bool bw_searchable = getBw()->isSearchable();
         if (fw_searchable && !bw_searchable) {
+            count_fallback_reason(FALLBACK_NON_SEARCHABLE);
             return getFw();
         } else if (!fw_searchable && bw_searchable) {
+            count_fallback_reason(FALLBACK_NON_SEARCHABLE);
             return getBw();
         } else if (!fw_searchable && !bw_searchable) {
-            return select_by_fallback();
+            return select_by_fallback(FALLBACK_NON_SEARCHABLE);
         }
 
         if (!guidance_enabled || landmark_coverage.landmark_count() == 0) {
-            return select_by_fallback();
+            return select_by_fallback(FALLBACK_DISABLED_OR_NO_LANDMARKS);
         }
 
         long fw_nodes = getFw()->nextStepNodes();
         long bw_nodes = getBw()->nextStepNodes();
         if (node_estimates_outside_slack(fw_nodes, bw_nodes)) {
-            return select_by_fallback();
+            return select_by_fallback(FALLBACK_NODE_SLACK);
         }
 
         refresh_coverage_if_needed();
+        ++guidance_evaluated_count;
 
-        if (last_fw_coverage.covered < last_bw_coverage.covered ||
-            (last_fw_coverage.covered == last_bw_coverage.covered &&
-             last_fw_coverage.covered_cost < last_bw_coverage.covered_cost)) {
+        int landmark_score_comparison = compare_landmark_scores();
+        if (landmark_score_comparison < 0) {
             ++guidance_fw_count;
             return getFw();
         }
-        if (last_bw_coverage.covered < last_fw_coverage.covered ||
-            (last_bw_coverage.covered == last_fw_coverage.covered &&
-             last_bw_coverage.covered_cost < last_fw_coverage.covered_cost)) {
+        if (landmark_score_comparison > 0) {
             ++guidance_bw_count;
             return getBw();
         }
 
-        return select_by_fallback();
+        return select_by_fallback(FALLBACK_EQUAL_SCORE);
     }
 
 public:
@@ -243,28 +312,51 @@ public:
         LandmarkBDDIndex &&landmark_index,
         int node_slack_percent_,
         int eval_frequency_,
+        int guidance_score_,
         bool guidance_enabled_)
         : BidirectionalSearch(eng, params, move(fw), move(bw)),
           landmark_coverage(move(landmark_index)),
           node_slack_percent(max(0, node_slack_percent_)),
           eval_frequency(max(1, eval_frequency_)),
+          guidance_score(static_cast<LandmarkGuidanceScore>(guidance_score_)),
           guidance_enabled(guidance_enabled_),
           decision_count(0),
           guidance_fw_count(0),
           guidance_bw_count(0),
           fallback_count(0),
+          guidance_evaluated_count(0),
+          coverage_recomputation_count(0),
+          fallback_node_slack_count(0),
+          fallback_equal_score_count(0),
+          fallback_disabled_or_no_landmarks_count(0),
+          fallback_non_searchable_count(0),
           have_coverage(false) {
         landmark_coverage.print_summary();
+        cout << "Landmark guidance score: "
+             << get_guidance_score_name(guidance_score) << endl;
     }
 
     virtual void statistics() const override {
         BidirectionalSearch::statistics();
         refresh_coverage_if_needed();
         landmark_coverage.print_summary();
+        cout << "Landmark guidance score: "
+             << get_guidance_score_name(guidance_score) << endl;
         cout << "Landmark guidance decisions: forward=" << guidance_fw_count
              << ", backward=" << guidance_bw_count
              << ", fallback_to_bdd_nodes=" << fallback_count
              << ", total=" << decision_count << endl;
+        cout << "Landmark guidance evaluations: guidance_evaluated="
+             << guidance_evaluated_count
+             << ", coverage_recomputations=" << coverage_recomputation_count
+             << endl;
+        cout << "Landmark guidance fallback reasons: node_slack="
+             << fallback_node_slack_count
+             << ", equal_score=" << fallback_equal_score_count
+             << ", disabled_no_landmarks="
+             << fallback_disabled_or_no_landmarks_count
+             << ", non_searchable=" << fallback_non_searchable_count
+             << endl;
         cout << "Landmark coverage forward: unweighted="
              << last_fw_coverage.covered << "/"
              << landmark_coverage.landmark_count()
@@ -302,6 +394,7 @@ void SymbolicLandmarkBidirectionalSearch::initialize() {
         move(landmark_index),
         lm_node_slack_percent,
         lm_eval_frequency,
+        lm_guidance_score,
         lm_guidance);
 }
 
@@ -311,6 +404,7 @@ SymbolicLandmarkBidirectionalSearch::SymbolicLandmarkBidirectionalSearch(
       lm_factory(opts.get<LandmarkFactory *>("lm_factory")),
       lm_node_slack_percent(opts.get<int>("lm_node_slack_percent")),
       lm_eval_frequency(opts.get<int>("lm_eval_frequency")),
+      lm_guidance_score(opts.get_enum("lm_guidance_score")),
       lm_guidance(opts.get<bool>("lm_guidance")) {
 }
 
@@ -350,6 +444,22 @@ static SearchEngine *_parse_landmark_bidirectional_ucs(OptionParser &parser) {
         "lm_guidance",
         "use landmark coverage for direction selection",
         "true");
+    vector<string> guidance_scores;
+    vector<string> guidance_scores_doc;
+    guidance_scores.push_back("coverage");
+    guidance_scores_doc.push_back(
+        "prefer expanding the direction with fewer covered landmarks; "
+        "break ties by covered landmark min-cost");
+    guidance_scores.push_back("weighted");
+    guidance_scores_doc.push_back(
+        "prefer expanding the direction with lower covered landmark min-cost; "
+        "break ties by unweighted coverage");
+    parser.add_enum_option(
+        "lm_guidance_score",
+        guidance_scores,
+        "landmark coverage score used for SLBD direction selection",
+        "coverage",
+        guidance_scores_doc);
 
     Options opts = parser.parse();
 
