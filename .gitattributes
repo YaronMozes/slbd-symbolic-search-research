@@ -1,0 +1,3 @@
+/fast-downward.py text eol=lf
+/build.py text eol=lf
+/misc/tests/compare-slbd.py text eol=lf
