@@ -41,13 +41,16 @@ FIELDNAMES = [
     "landmarks_disjunctive", "landmarks_conjunctive",
     "landmarks_min_cost_sum", "lm_guidance_score",
     "lm_guidance_polarity", "lm_landmark_filter", "lm_min_score_gap",
+    "lm_node_slack_absolute", "lm_guidance_start_decision",
+    "lm_guidance_max_overrides_percent",
     "coverage_forward_unweighted", "coverage_forward_weighted",
     "coverage_backward_unweighted", "coverage_backward_weighted",
     "guidance_forward", "guidance_backward", "fallback_to_bdd_nodes",
     "guidance_total", "guidance_evaluated", "coverage_recomputations",
     "fallback_node_slack", "fallback_equal_score",
     "fallback_disabled_no_landmarks", "fallback_non_searchable",
-    "fallback_insufficient_score_gap",
+    "fallback_insufficient_score_gap", "fallback_warmup",
+    "fallback_override_budget",
     "search", "log", "plan",
 ]
 
@@ -216,6 +219,9 @@ def parse_output(stdout, returncode, elapsed):
         "lm_guidance_polarity": "",
         "lm_landmark_filter": "",
         "lm_min_score_gap": "",
+        "lm_node_slack_absolute": "",
+        "lm_guidance_start_decision": "",
+        "lm_guidance_max_overrides_percent": "",
         "guidance_forward": "",
         "guidance_backward": "",
         "fallback_to_bdd_nodes": "",
@@ -227,6 +233,8 @@ def parse_output(stdout, returncode, elapsed):
         "fallback_disabled_no_landmarks": "",
         "fallback_non_searchable": "",
         "fallback_insufficient_score_gap": "",
+        "fallback_warmup": "",
+        "fallback_override_budget": "",
         "coverage_forward_unweighted": "",
         "coverage_forward_weighted": "",
         "coverage_backward_unweighted": "",
@@ -241,6 +249,10 @@ def parse_output(stdout, returncode, elapsed):
         ("lm_guidance_polarity", r"Landmark guidance polarity: ([A-Za-z0-9_-]+)"),
         ("lm_landmark_filter", r"Landmark guidance filter: ([A-Za-z0-9_-]+)"),
         ("lm_min_score_gap", r"Landmark guidance min score gap: ([0-9]+)"),
+        ("lm_node_slack_absolute", r"Landmark guidance node slack absolute: (-?[0-9]+)"),
+        ("lm_guidance_start_decision", r"Landmark guidance start decision: ([0-9]+)"),
+        ("lm_guidance_max_overrides_percent",
+         r"Landmark guidance max overrides percent: ([0-9]+)"),
     ]
     for key, pattern in patterns:
         match = re.search(pattern, stdout)
@@ -293,13 +305,16 @@ def parse_output(stdout, returncode, elapsed):
         r"Landmark guidance fallback reasons: node_slack=([0-9]+), "
         r"equal_score=([0-9]+), disabled_no_landmarks=([0-9]+), "
         r"non_searchable=([0-9]+)"
-        r"(?:, insufficient_score_gap=([0-9]+))?",
+        r"(?:, insufficient_score_gap=([0-9]+))?"
+        r"(?:, warmup=([0-9]+))?"
+        r"(?:, override_budget=([0-9]+))?",
         stdout)
     if match:
         keys = [
             "fallback_node_slack", "fallback_equal_score",
             "fallback_disabled_no_landmarks", "fallback_non_searchable",
-            "fallback_insufficient_score_gap",
+            "fallback_insufficient_score_gap", "fallback_warmup",
+            "fallback_override_budget",
         ]
         result.update({
             key: value or "" for key, value in zip(keys, match.groups())
@@ -426,9 +441,13 @@ def summarize(rows, configs, planned_run_count=None):
     lines.append("")
 
     lines.append("Solved count")
+    solved_counts = {}
+    total_counts = {}
     for config in config_names:
         config_rows = [row for row in rows if row["config"] == config]
         solved = sum(1 for row in config_rows if is_solved(row))
+        solved_counts[config] = solved
+        total_counts[config] = len(config_rows)
         lines.append("  %s: %d/%d" % (config, solved, len(config_rows)))
     lines.append("")
 
@@ -485,13 +504,16 @@ def summarize(rows, configs, planned_run_count=None):
             common_wall_times[config].append(as_float(row, "wall_time"))
             common_memory[config].append(as_float(row, "peak_memory_kb"))
 
-    baseline = config_names[0] if config_names else None
+    baseline = "sbd" if "sbd" in config_names else (
+        config_names[0] if config_names else None)
     baseline_gm = geometric_mean(common_search_times[baseline]) if baseline else None
+    common_ratios = {}
     for config in config_names:
         gm = geometric_mean(common_search_times[config])
         wall = arithmetic_mean(common_wall_times[config])
         memory = arithmetic_mean(common_memory[config])
         ratio = gm / baseline_gm if gm and baseline_gm else None
+        common_ratios[config] = ratio
         lines.append(
             "  %s: search_gm=%s, ratio_vs_%s=%s, wall_avg=%s, memory_avg=%s KB" %
             (config, format_number(gm, "s"), baseline,
@@ -507,14 +529,77 @@ def summarize(rows, configs, planned_run_count=None):
             by_domain_config[(domain, config)].append(
                 as_float(by_config[config], "actual_search_time"))
     domains = sorted({domain for domain, _ in by_domain_config})
+    domain_ratios = {}
     for domain in domains:
         baseline_domain_gm = geometric_mean(by_domain_config[(domain, baseline)])
         parts = []
         for config in config_names:
             gm = geometric_mean(by_domain_config[(domain, config)])
             ratio = gm / baseline_domain_gm if gm and baseline_domain_gm else None
+            domain_ratios[(domain, config)] = ratio
             parts.append("%s=%s" % (config, format_number(ratio)))
         lines.append("  %s: %s" % (domain, ", ".join(parts)))
+    lines.append("")
+
+    lines.append("Best per domain")
+    if domains:
+        for domain in domains:
+            candidates = [
+                (domain_ratios[(domain, config)], config)
+                for config in config_names
+                if config != baseline and domain_ratios.get((domain, config))
+            ]
+            if candidates:
+                ratio, config = min(candidates)
+                lines.append(
+                    "  %s: %s ratio_vs_%s=%s" %
+                    (domain, config, baseline, format_number(ratio)))
+            else:
+                lines.append("  %s: n/a" % domain)
+    else:
+        lines.append("  n/a")
+    lines.append("")
+
+    lines.append("Acceptance gate")
+    gate_complete = planned_run_count is None or len(rows) >= planned_run_count
+    reference_configs = [
+        config for config in ["sbd", "slbd-no-guidance", "slbd"]
+        if config in config_names
+    ]
+    solved_required = (
+        max(solved_counts[config] for config in reference_configs)
+        if reference_configs else None)
+    cost_ok = not cost_mismatches
+    lines.append(
+        "  references: %s" %
+        (", ".join(reference_configs) if reference_configs else "n/a"))
+    if not gate_complete:
+        lines.append("  status: incomplete; final pass/fail waits for all planned rows")
+    for config in config_names:
+        if config == baseline:
+            continue
+        solved_ok = (
+            solved_required is not None and
+            solved_counts[config] >= solved_required)
+        speed_ok = (
+            common_ratios.get(config) is not None and
+            common_ratios[config] <= 0.9)
+        overall_ok = cost_ok and solved_ok and speed_ok
+        overall_text = (
+            "PASS" if overall_ok else "FAIL") if gate_complete else "INCOMPLETE"
+        lines.append(
+            "  %s: cost=%s, solved=%s (%d/%d, required %s), "
+            "speed=%s (ratio_vs_%s=%s), overall=%s" %
+            (config,
+             "pass" if cost_ok else "fail",
+             "pass" if solved_ok else "fail",
+             solved_counts[config],
+             total_counts[config],
+             solved_required if solved_required is not None else "n/a",
+             "pass" if speed_ok else "fail",
+             baseline,
+             format_number(common_ratios.get(config)),
+             overall_text))
     lines.append("")
 
     lines.append("Guidance and fallback rates")
@@ -533,7 +618,7 @@ def summarize(rows, configs, planned_run_count=None):
             "  %s: guided=%d/%d (%s%%), fallback_to_bdd_nodes=%d (%s%%), "
             "node_slack=%d, equal_score=%d, disabled_no_landmarks=%d, "
             "non_searchable=%d, insufficient_score_gap=%d, "
-            "coverage_recomputations=%d" %
+            "warmup=%d, override_budget=%d, coverage_recomputations=%d" %
             (config, guidance_chosen, guidance_total,
              format_number(guidance_rate), fallback_total,
              format_number(fallback_rate),
@@ -542,6 +627,8 @@ def summarize(rows, configs, planned_run_count=None):
              sum(as_int(row, "fallback_disabled_no_landmarks") for row in group),
              sum(as_int(row, "fallback_non_searchable") for row in group),
              sum(as_int(row, "fallback_insufficient_score_gap") for row in group),
+             sum(as_int(row, "fallback_warmup") for row in group),
+             sum(as_int(row, "fallback_override_budget") for row in group),
              sum(as_int(row, "coverage_recomputations") for row in group)))
 
     return "\n".join(lines) + "\n"
