@@ -33,6 +33,24 @@ CONFIG_PRESETS = {
 
 GENERATED_FILES = ["output", "output.sas", "sas_plan"]
 
+FIELDNAMES = [
+    "task", "config", "repeat", "config_preset", "num_configs",
+    "returncode", "plan_cost", "plan_length", "actual_search_time",
+    "wall_time", "peak_memory_kb", "fw_time", "bw_time", "fw_steps",
+    "bw_steps", "landmarks_total", "landmarks_simple",
+    "landmarks_disjunctive", "landmarks_conjunctive",
+    "landmarks_min_cost_sum", "lm_guidance_score",
+    "lm_guidance_polarity", "lm_landmark_filter", "lm_min_score_gap",
+    "coverage_forward_unweighted", "coverage_forward_weighted",
+    "coverage_backward_unweighted", "coverage_backward_weighted",
+    "guidance_forward", "guidance_backward", "fallback_to_bdd_nodes",
+    "guidance_total", "guidance_evaluated", "coverage_recomputations",
+    "fallback_node_slack", "fallback_equal_score",
+    "fallback_disabled_no_landmarks", "fallback_non_searchable",
+    "fallback_insufficient_score_gap",
+    "search", "log", "plan",
+]
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -82,18 +100,53 @@ def parse_args():
     parser.add_argument(
         "--task", nargs=2, action="append", metavar=("DOMAIN", "PROBLEM"),
         help="task to run; defaults to tasks discovered under --benchmark-dir")
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="reuse matching rows already present in --output and skip them")
+    parser.add_argument(
+        "--summary-only", action="store_true",
+        help="write --summary from matching rows in --output without running planners")
+    parser.add_argument(
+        "--max-runs", type=int,
+        help="stop after this many newly executed planner runs")
+    parser.add_argument(
+        "--extra-config", action="append", default=[], metavar="NAME=SEARCH",
+        help="additional config to run; may be used multiple times")
     return parser.parse_args()
 
 
 def get_configs(args):
     if args.config_preset == "confirm":
-        return [
+        configs = [
             ("sbd", "sbd()"),
             ("slbd-no-guidance", "slbd(lm_guidance=false,lm_factory=lm_rhw())"),
             ("slbd", "slbd(lm_factory=lm_rhw())"),
             (args.confirm_candidate_name, args.confirm_candidate),
         ]
-    return CONFIG_PRESETS[args.config_preset]
+    else:
+        configs = list(CONFIG_PRESETS[args.config_preset])
+
+    for extra_config in args.extra_config:
+        if "=" not in extra_config:
+            raise ValueError(
+                "--extra-config must use NAME=SEARCH format: %s" %
+                extra_config)
+        name, search = extra_config.split("=", 1)
+        name = name.strip()
+        search = search.strip()
+        if not name or not search:
+            raise ValueError(
+                "--extra-config must use NAME=SEARCH format: %s" %
+                extra_config)
+        configs.append((name, search))
+    names = [name for name, _ in configs]
+    duplicate_names = sorted(
+        name for name, count in Counter(names).items() if count > 1)
+    if duplicate_names:
+        raise ValueError(
+            "duplicate config names are not allowed: %s" %
+            ", ".join(duplicate_names))
+    return configs
 
 
 def discover_tasks(benchmark_dir, include_domains, tasks_per_domain):
@@ -160,6 +213,9 @@ def parse_output(stdout, returncode, elapsed):
         "landmarks_conjunctive": "",
         "landmarks_min_cost_sum": "",
         "lm_guidance_score": "",
+        "lm_guidance_polarity": "",
+        "lm_landmark_filter": "",
+        "lm_min_score_gap": "",
         "guidance_forward": "",
         "guidance_backward": "",
         "fallback_to_bdd_nodes": "",
@@ -170,6 +226,7 @@ def parse_output(stdout, returncode, elapsed):
         "fallback_equal_score": "",
         "fallback_disabled_no_landmarks": "",
         "fallback_non_searchable": "",
+        "fallback_insufficient_score_gap": "",
         "coverage_forward_unweighted": "",
         "coverage_forward_weighted": "",
         "coverage_backward_unweighted": "",
@@ -181,6 +238,9 @@ def parse_output(stdout, returncode, elapsed):
         ("plan_length", r"Plan length: (\d+) step"),
         ("actual_search_time", r"Actual search time: ([0-9.eE+-]+)s"),
         ("lm_guidance_score", r"Landmark guidance score: ([A-Za-z0-9_-]+)"),
+        ("lm_guidance_polarity", r"Landmark guidance polarity: ([A-Za-z0-9_-]+)"),
+        ("lm_landmark_filter", r"Landmark guidance filter: ([A-Za-z0-9_-]+)"),
+        ("lm_min_score_gap", r"Landmark guidance min score gap: ([0-9]+)"),
     ]
     for key, pattern in patterns:
         match = re.search(pattern, stdout)
@@ -232,14 +292,18 @@ def parse_output(stdout, returncode, elapsed):
     match = re.search(
         r"Landmark guidance fallback reasons: node_slack=([0-9]+), "
         r"equal_score=([0-9]+), disabled_no_landmarks=([0-9]+), "
-        r"non_searchable=([0-9]+)",
+        r"non_searchable=([0-9]+)"
+        r"(?:, insufficient_score_gap=([0-9]+))?",
         stdout)
     if match:
         keys = [
             "fallback_node_slack", "fallback_equal_score",
             "fallback_disabled_no_landmarks", "fallback_non_searchable",
+            "fallback_insufficient_score_gap",
         ]
-        result.update(dict(zip(keys, match.groups())))
+        result.update({
+            key: value or "" for key, value in zip(keys, match.groups())
+        })
 
     for direction in ["forward", "backward"]:
         match = re.search(
@@ -299,7 +363,7 @@ def run_config(args, configs, domain, problem, config_name, search, repetition):
         "task": task,
         "config": config_name,
         "search": search,
-        "repeat": repetition,
+        "repeat": str(repetition),
         "config_preset": args.config_preset,
         "num_configs": len(configs),
         "log": os.path.relpath(log_path, REPO_ROOT),
@@ -347,13 +411,17 @@ def format_number(value, suffix=""):
     return "%.6g%s" % (value, suffix)
 
 
-def summarize(rows, configs):
+def summarize(rows, configs, planned_run_count=None):
     config_names = [name for name, _ in configs]
     lines = []
     lines.append("SLBD comparison summary")
     lines.append("=======================")
     lines.append("")
     lines.append("Rows: %d" % len(rows))
+    if planned_run_count is not None:
+        lines.append("Planned runs: %d" % planned_run_count)
+        lines.append("Completed rows: %d" % len(rows))
+        lines.append("Missing rows: %d" % max(0, planned_run_count - len(rows)))
     lines.append("Configs: %s" % ", ".join(config_names))
     lines.append("")
 
@@ -464,7 +532,8 @@ def summarize(rows, configs):
         lines.append(
             "  %s: guided=%d/%d (%s%%), fallback_to_bdd_nodes=%d (%s%%), "
             "node_slack=%d, equal_score=%d, disabled_no_landmarks=%d, "
-            "non_searchable=%d, coverage_recomputations=%d" %
+            "non_searchable=%d, insufficient_score_gap=%d, "
+            "coverage_recomputations=%d" %
             (config, guidance_chosen, guidance_total,
              format_number(guidance_rate), fallback_total,
              format_number(fallback_rate),
@@ -472,6 +541,7 @@ def summarize(rows, configs):
              sum(as_int(row, "fallback_equal_score") for row in group),
              sum(as_int(row, "fallback_disabled_no_landmarks") for row in group),
              sum(as_int(row, "fallback_non_searchable") for row in group),
+             sum(as_int(row, "fallback_insufficient_score_gap") for row in group),
              sum(as_int(row, "coverage_recomputations") for row in group)))
 
     return "\n".join(lines) + "\n"
@@ -483,6 +553,75 @@ def ensure_parent_dir(path):
         os.makedirs(parent, exist_ok=True)
 
 
+def row_for_csv(row):
+    csv_row = {}
+    for field in FIELDNAMES:
+        value = row.get(field, "")
+        csv_row[field] = "" if value is None else str(value)
+    return csv_row
+
+
+def row_key(task, config, repeat, search):
+    return (task, config, str(repeat), search)
+
+
+def row_key_from_row(row):
+    return row_key(
+        row.get("task", ""),
+        row.get("config", ""),
+        row.get("repeat", ""),
+        row.get("search", ""))
+
+
+def iter_runs(args, configs, tasks):
+    for domain, problem in tasks:
+        task = task_name(problem, args.benchmark_dir)
+        for repetition in range(1, args.repeat + 1):
+            for config_name, search in configs:
+                yield {
+                    "domain": domain,
+                    "problem": problem,
+                    "task": task,
+                    "config": config_name,
+                    "search": search,
+                    "repeat": repetition,
+                }
+
+
+def read_existing_rows(path, planned_keys):
+    if not os.path.exists(path):
+        return []
+    rows_by_key = {}
+    with open(path, newline="", encoding="utf-8") as csv_file:
+        for row in csv.DictReader(csv_file):
+            if row_key_from_row(row) in planned_keys:
+                rows_by_key[row_key_from_row(row)] = row
+    return list(rows_by_key.values())
+
+
+def write_rows(path, rows):
+    with open(path, "w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=FIELDNAMES)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row_for_csv(row))
+
+
+def append_row(path, row):
+    with open(path, "a", newline="", encoding="utf-8") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=FIELDNAMES)
+        writer.writerow(row_for_csv(row))
+        csv_file.flush()
+        os.fsync(csv_file.fileno())
+
+
+def write_summary(path, rows, configs, planned_run_count=None):
+    summary = summarize(rows, configs, planned_run_count)
+    with open(path, "w", encoding="utf-8") as summary_file:
+        summary_file.write(summary)
+    return summary
+
+
 def main():
     args = parse_args()
     args.benchmark_dir = os.path.abspath(args.benchmark_dir)
@@ -492,43 +631,47 @@ def main():
     ensure_parent_dir(args.summary)
     tasks = args.task or discover_tasks(
         args.benchmark_dir, args.include_domain, args.tasks_per_domain)
-    rows = []
+    runs = list(iter_runs(args, configs, tasks))
+    planned_keys = {
+        row_key(run["task"], run["config"], run["repeat"], run["search"])
+        for run in runs
+    }
 
-    for domain, problem in tasks:
-        for repetition in range(1, args.repeat + 1):
-            for config_name, search in configs:
-                print("%s %s repeat %s" % (
-                    task_name(problem, args.benchmark_dir),
-                    config_name,
-                    repetition))
-                rows.append(run_config(
-                    args, configs, domain, problem, config_name, search,
-                    repetition))
-
-    fieldnames = [
-        "task", "config", "repeat", "config_preset", "num_configs",
-        "returncode", "plan_cost", "plan_length", "actual_search_time",
-        "wall_time", "peak_memory_kb", "fw_time", "bw_time", "fw_steps",
-        "bw_steps", "landmarks_total", "landmarks_simple",
-        "landmarks_disjunctive", "landmarks_conjunctive",
-        "landmarks_min_cost_sum", "lm_guidance_score",
-        "coverage_forward_unweighted", "coverage_forward_weighted",
-        "coverage_backward_unweighted", "coverage_backward_weighted",
-        "guidance_forward", "guidance_backward", "fallback_to_bdd_nodes",
-        "guidance_total", "guidance_evaluated", "coverage_recomputations",
-        "fallback_node_slack", "fallback_equal_score",
-        "fallback_disabled_no_landmarks", "fallback_non_searchable",
-        "search", "log", "plan",
-    ]
-    with open(args.output, "w", newline="", encoding="utf-8") as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
+    rows = read_existing_rows(args.output, planned_keys) if (
+        args.resume or args.summary_only) else []
+    completed_keys = {row_key_from_row(row) for row in rows}
+    write_rows(args.output, rows)
     print("Wrote %s" % args.output)
 
-    summary = summarize(rows, configs)
-    with open(args.summary, "w", encoding="utf-8") as summary_file:
-        summary_file.write(summary)
+    if args.summary_only:
+        summary = write_summary(args.summary, rows, configs, len(runs))
+        print(summary)
+        print("Wrote %s" % args.summary)
+        return
+
+    executed_runs = 0
+    for run in runs:
+        key = row_key(run["task"], run["config"], run["repeat"], run["search"])
+        if key in completed_keys:
+            print("%s %s repeat %s skipped" % (
+                run["task"], run["config"], run["repeat"]))
+            continue
+
+        print("%s %s repeat %s" % (
+            run["task"], run["config"], run["repeat"]))
+        row = run_config(
+            args, configs, run["domain"], run["problem"], run["config"],
+            run["search"], run["repeat"])
+        row = row_for_csv(row)
+        rows.append(row)
+        completed_keys.add(key)
+        append_row(args.output, row)
+        write_summary(args.summary, rows, configs, len(runs))
+        executed_runs += 1
+        if args.max_runs is not None and executed_runs >= args.max_runs:
+            break
+
+    summary = write_summary(args.summary, rows, configs, len(runs))
     print(summary)
     print("Wrote %s" % args.summary)
 
