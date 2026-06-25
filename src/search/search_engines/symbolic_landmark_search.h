@@ -19,6 +19,7 @@ class SymbolicLandmarkBidirectionalSearch : public symbolic_search::SymbolicSear
     int lm_node_slack_absolute;
     int lm_eval_frequency;
     int lm_guidance_score;
+    int lm_guidance_scope;
     int lm_guidance_polarity;
     int lm_landmark_filter;
     int lm_min_score_gap;

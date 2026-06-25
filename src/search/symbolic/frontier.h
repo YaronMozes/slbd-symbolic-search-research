@@ -88,6 +88,8 @@ namespace symbolic {
 	    return Sfilter;
 	}
 
+	bool getPreparedBucket(Bucket &res) const;
+
 	void filter(const BDD & bdd) {
 	    assert(Smerge.empty() &&  Szero.empty() && S.empty());
 	    for (BDD & b : Sfilter) {

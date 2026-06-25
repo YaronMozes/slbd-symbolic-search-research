@@ -30,6 +30,29 @@ CONFIG_PRESETS = {
         ("slbd-slack50", "slbd(lm_factory=lm_rhw(),lm_node_slack_percent=50)"),
         ("slbd-eval5", "slbd(lm_factory=lm_rhw(),lm_eval_frequency=5)"),
     ],
+    "frontier": [
+        ("sbd", "sbd()"),
+        ("slbd-no-guidance", "slbd(lm_guidance=false,lm_factory=lm_rhw())"),
+        ("slbd", "slbd(lm_factory=lm_rhw())"),
+        ("slbd-safe-eval10",
+         "slbd(lm_factory=lm_rhw(),lm_node_slack_percent=0,lm_eval_frequency=10)"),
+        ("slbd-frontier",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_scope=frontier)"),
+        ("slbd-frontier-safe-eval10",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_scope=frontier,"
+         "lm_node_slack_percent=0,lm_eval_frequency=10)"),
+        ("slbd-frontier-abs5-eval10",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_scope=frontier,"
+         "lm_node_slack_absolute=5,lm_eval_frequency=10)"),
+        ("slbd-frontier-weighted-abs5-eval10",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_scope=frontier,"
+         "lm_guidance_score=weighted,lm_node_slack_absolute=5,"
+         "lm_eval_frequency=10)"),
+        ("slbd-lazy-frontier-abs5-eval10",
+         "slbd(lm_factory=lm_rhw(),lm_lazy_landmarks=true,"
+         "lm_guidance_scope=frontier,lm_node_slack_absolute=5,"
+         "lm_eval_frequency=10)"),
+    ],
 }
 
 GENERATED_FILES = ["output", "output.sas", "sas_plan"]
@@ -41,8 +64,9 @@ FIELDNAMES = [
     "bw_steps", "landmarks_total", "landmarks_simple",
     "landmarks_disjunctive", "landmarks_conjunctive",
     "landmarks_min_cost_sum", "lm_guidance_score",
-    "lm_guidance_polarity", "lm_landmark_filter", "lm_min_score_gap",
-    "lm_node_slack_absolute", "lm_guidance_start_decision",
+    "lm_guidance_scope", "lm_guidance_polarity",
+    "lm_landmark_filter", "lm_min_score_gap", "lm_node_slack_absolute",
+    "lm_guidance_start_decision",
     "lm_guidance_max_overrides_percent", "lm_lazy_landmarks",
     "lm_landmarks_initialized", "lm_landmark_initializations",
     "coverage_forward_unweighted", "coverage_forward_weighted",
@@ -52,7 +76,7 @@ FIELDNAMES = [
     "fallback_node_slack", "fallback_equal_score",
     "fallback_disabled_no_landmarks", "fallback_non_searchable",
     "fallback_insufficient_score_gap", "fallback_warmup",
-    "fallback_override_budget",
+    "fallback_override_budget", "fallback_frontier_unavailable",
     "search", "log", "plan",
 ]
 
@@ -76,7 +100,8 @@ def parse_args():
         "--tasks-per-domain", type=int,
         help="deterministically keep at most this many sorted tasks per domain")
     parser.add_argument(
-        "--config-preset", choices=["smoke", "tuning", "confirm"], default="smoke",
+        "--config-preset", choices=["smoke", "tuning", "confirm", "frontier"],
+        default="smoke",
         help="configuration set to run")
     parser.add_argument(
         "--confirm-candidate",
@@ -218,6 +243,7 @@ def parse_output(stdout, returncode, elapsed):
         "landmarks_conjunctive": "",
         "landmarks_min_cost_sum": "",
         "lm_guidance_score": "",
+        "lm_guidance_scope": "",
         "lm_guidance_polarity": "",
         "lm_landmark_filter": "",
         "lm_min_score_gap": "",
@@ -240,6 +266,7 @@ def parse_output(stdout, returncode, elapsed):
         "fallback_insufficient_score_gap": "",
         "fallback_warmup": "",
         "fallback_override_budget": "",
+        "fallback_frontier_unavailable": "",
         "coverage_forward_unweighted": "",
         "coverage_forward_weighted": "",
         "coverage_backward_unweighted": "",
@@ -251,6 +278,7 @@ def parse_output(stdout, returncode, elapsed):
         ("plan_length", r"Plan length: (\d+) step"),
         ("actual_search_time", r"Actual search time: ([0-9.eE+-]+)s"),
         ("lm_guidance_score", r"Landmark guidance score: ([A-Za-z0-9_-]+)"),
+        ("lm_guidance_scope", r"Landmark guidance scope: ([A-Za-z0-9_-]+)"),
         ("lm_guidance_polarity", r"Landmark guidance polarity: ([A-Za-z0-9_-]+)"),
         ("lm_landmark_filter", r"Landmark guidance filter: ([A-Za-z0-9_-]+)"),
         ("lm_min_score_gap", r"Landmark guidance min score gap: ([0-9]+)"),
@@ -317,14 +345,15 @@ def parse_output(stdout, returncode, elapsed):
         r"non_searchable=([0-9]+)"
         r"(?:, insufficient_score_gap=([0-9]+))?"
         r"(?:, warmup=([0-9]+))?"
-        r"(?:, override_budget=([0-9]+))?",
+        r"(?:, override_budget=([0-9]+))?"
+        r"(?:, frontier_unavailable=([0-9]+))?",
         stdout)
     if match:
         keys = [
             "fallback_node_slack", "fallback_equal_score",
             "fallback_disabled_no_landmarks", "fallback_non_searchable",
             "fallback_insufficient_score_gap", "fallback_warmup",
-            "fallback_override_budget",
+            "fallback_override_budget", "fallback_frontier_unavailable",
         ]
         result.update({
             key: value or "" for key, value in zip(keys, match.groups())
@@ -668,7 +697,8 @@ def summarize(rows, configs, planned_run_count=None):
             "  %s: guided=%d/%d (%s%%), fallback_to_bdd_nodes=%d (%s%%), "
             "node_slack=%d, equal_score=%d, disabled_no_landmarks=%d, "
             "non_searchable=%d, insufficient_score_gap=%d, "
-            "warmup=%d, override_budget=%d, coverage_recomputations=%d" %
+            "warmup=%d, override_budget=%d, frontier_unavailable=%d, "
+            "coverage_recomputations=%d" %
             (config, guidance_chosen, guidance_total,
              format_number(guidance_rate), fallback_total,
              format_number(fallback_rate),
@@ -679,6 +709,7 @@ def summarize(rows, configs, planned_run_count=None):
              sum(as_int(row, "fallback_insufficient_score_gap") for row in group),
              sum(as_int(row, "fallback_warmup") for row in group),
              sum(as_int(row, "fallback_override_budget") for row in group),
+             sum(as_int(row, "fallback_frontier_unavailable") for row in group),
              sum(as_int(row, "coverage_recomputations") for row in group)))
 
     return "\n".join(lines) + "\n"

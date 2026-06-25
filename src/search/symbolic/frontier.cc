@@ -130,6 +130,15 @@ namespace symbolic {
 	}
     }
 
+    bool Frontier::getPreparedBucket(Bucket &res) const {
+	if(!expansionReady()){
+	    return false;
+	}
+	const Bucket &source = Szero.empty() ? S : Szero;
+	res.insert(res.end(), source.begin(), source.end());
+	return !res.empty();
+    }
+
     ResultExpansion Frontier::expand_zero(int maxTime, int maxNodes, bool fw){
 	DEBUG_MSG(cout<<"expand_zero"<< endl;);
 	//Image with respect to 0-cost actions

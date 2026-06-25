@@ -392,4 +392,16 @@ namespace symbolic {
         return closed->getClosed();
     }
 
+    bool UniformCostSearch::get_current_frontier_states(BDD &states) const {
+        Bucket bucket;
+        if (!frontier.getPreparedBucket(bucket)) {
+            return false;
+        }
+        states = mgr->zeroBDD();
+        for (const BDD &bdd : bucket) {
+            states += bdd;
+        }
+        return !states.IsZero();
+    }
+
 }

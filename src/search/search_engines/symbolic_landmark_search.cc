@@ -40,6 +40,11 @@ enum LandmarkGuidancePolarity {
     POLARITY_MORE_COVERED
 };
 
+enum LandmarkGuidanceScope {
+    SCOPE_SEEN,
+    SCOPE_FRONTIER
+};
+
 enum LandmarkFilter {
     FILTER_ALL,
     FILTER_NONGOAL
@@ -52,7 +57,8 @@ enum FallbackReason {
     FALLBACK_NON_SEARCHABLE,
     FALLBACK_INSUFFICIENT_SCORE_GAP,
     FALLBACK_WARMUP,
-    FALLBACK_OVERRIDE_BUDGET
+    FALLBACK_OVERRIDE_BUDGET,
+    FALLBACK_FRONTIER_UNAVAILABLE
 };
 
 const char *get_guidance_score_name(LandmarkGuidanceScore score) {
@@ -74,6 +80,17 @@ const char *get_guidance_polarity_name(LandmarkGuidancePolarity polarity) {
         return "less_covered";
     case POLARITY_MORE_COVERED:
         return "more_covered";
+    default:
+        return "unknown";
+    }
+}
+
+const char *get_guidance_scope_name(LandmarkGuidanceScope scope) {
+    switch (scope) {
+    case SCOPE_SEEN:
+        return "seen";
+    case SCOPE_FRONTIER:
+        return "frontier";
     default:
         return "unknown";
     }
@@ -260,6 +277,7 @@ class LandmarkGuidedBidirectionalSearch : public BidirectionalSearch {
     int node_slack_absolute;
     int eval_frequency;
     LandmarkGuidanceScore guidance_score;
+    LandmarkGuidanceScope guidance_scope;
     LandmarkGuidancePolarity guidance_polarity;
     LandmarkFilter landmark_filter;
     bool guidance_enabled;
@@ -281,6 +299,7 @@ class LandmarkGuidedBidirectionalSearch : public BidirectionalSearch {
     mutable int fallback_insufficient_score_gap_count;
     mutable int fallback_warmup_count;
     mutable int fallback_override_budget_count;
+    mutable int fallback_frontier_unavailable_count;
     mutable int landmark_initialization_count;
     mutable LandmarkCoverageSnapshot last_fw_coverage;
     mutable LandmarkCoverageSnapshot last_bw_coverage;
@@ -299,13 +318,31 @@ class LandmarkGuidedBidirectionalSearch : public BidirectionalSearch {
         return (upper - lower) * 100 > lower * node_slack_percent;
     }
 
-    void refresh_coverage_if_needed() const {
+    bool get_coverage_states(
+        UnidirectionalSearch *search,
+        bool fw_dir,
+        BDD &states) const {
+        if (guidance_scope == SCOPE_SEEN) {
+            states = search->get_seen_states(fw_dir);
+            return true;
+        }
+        return search->get_current_frontier_states(states) &&
+            !states.IsZero();
+    }
+
+    bool refresh_coverage_if_needed() const {
         if (!have_coverage || decision_count % eval_frequency == 0) {
+            BDD fw_states = mgr->zeroBDD();
+            BDD bw_states = mgr->zeroBDD();
+            if (!get_coverage_states(getFw(), true, fw_states) ||
+                !get_coverage_states(getBw(), false, bw_states)) {
+                return false;
+            }
             LandmarkCoverage &coverage = *landmark_coverage;
             LandmarkCoverageSnapshot next_fw_coverage =
-                coverage.compute(getFw()->get_seen_states(true));
+                coverage.compute(fw_states);
             LandmarkCoverageSnapshot next_bw_coverage =
-                coverage.compute(getBw()->get_seen_states(false));
+                coverage.compute(bw_states);
             coverage.annotate_progress(
                 next_fw_coverage,
                 have_coverage ? &last_fw_coverage : nullptr);
@@ -317,6 +354,7 @@ class LandmarkGuidedBidirectionalSearch : public BidirectionalSearch {
             ++coverage_recomputation_count;
             have_coverage = true;
         }
+        return true;
     }
 
     void count_fallback_reason(FallbackReason reason) const {
@@ -341,6 +379,9 @@ class LandmarkGuidedBidirectionalSearch : public BidirectionalSearch {
             break;
         case FALLBACK_OVERRIDE_BUDGET:
             ++fallback_override_budget_count;
+            break;
+        case FALLBACK_FRONTIER_UNAVAILABLE:
+            ++fallback_frontier_unavailable_count;
             break;
         }
     }
@@ -487,7 +528,9 @@ protected:
             return select_by_fallback(FALLBACK_DISABLED_OR_NO_LANDMARKS);
         }
 
-        refresh_coverage_if_needed();
+        if (!refresh_coverage_if_needed()) {
+            return select_by_fallback(FALLBACK_FRONTIER_UNAVAILABLE);
+        }
         ++guidance_evaluated_count;
 
         LandmarkScoreComparison landmark_score = compare_landmark_scores();
@@ -528,6 +571,7 @@ public:
         int node_slack_absolute_,
         int eval_frequency_,
         int guidance_score_,
+        int guidance_scope_,
         int guidance_polarity_,
         int landmark_filter_,
         int min_score_gap_,
@@ -543,6 +587,7 @@ public:
           node_slack_absolute(node_slack_absolute_),
           eval_frequency(max(1, eval_frequency_)),
           guidance_score(static_cast<LandmarkGuidanceScore>(guidance_score_)),
+          guidance_scope(static_cast<LandmarkGuidanceScope>(guidance_scope_)),
           guidance_polarity(static_cast<LandmarkGuidancePolarity>(guidance_polarity_)),
           landmark_filter(static_cast<LandmarkFilter>(landmark_filter_)),
           guidance_enabled(guidance_enabled_),
@@ -564,11 +609,14 @@ public:
           fallback_insufficient_score_gap_count(0),
           fallback_warmup_count(0),
           fallback_override_budget_count(0),
+          fallback_frontier_unavailable_count(0),
           landmark_initialization_count(landmark_coverage ? 1 : 0),
           have_coverage(false) {
         print_landmark_summary();
         cout << "Landmark guidance score: "
              << get_guidance_score_name(guidance_score) << endl;
+        cout << "Landmark guidance scope: "
+             << get_guidance_scope_name(guidance_scope) << endl;
         cout << "Landmark guidance polarity: "
              << get_guidance_polarity_name(guidance_polarity) << endl;
         cout << "Landmark guidance filter: "
@@ -597,6 +645,8 @@ public:
         print_landmark_summary();
         cout << "Landmark guidance score: "
              << get_guidance_score_name(guidance_score) << endl;
+        cout << "Landmark guidance scope: "
+             << get_guidance_scope_name(guidance_scope) << endl;
         cout << "Landmark guidance polarity: "
              << get_guidance_polarity_name(guidance_polarity) << endl;
         cout << "Landmark guidance filter: "
@@ -633,6 +683,8 @@ public:
              << fallback_insufficient_score_gap_count
              << ", warmup=" << fallback_warmup_count
              << ", override_budget=" << fallback_override_budget_count
+             << ", frontier_unavailable="
+             << fallback_frontier_unavailable_count
              << endl;
         int total_landmarks = landmark_coverage ?
             landmark_coverage->landmark_count() : 0;
@@ -686,6 +738,7 @@ void SymbolicLandmarkBidirectionalSearch::initialize() {
         lm_node_slack_absolute,
         lm_eval_frequency,
         lm_guidance_score,
+        lm_guidance_scope,
         lm_guidance_polarity,
         lm_landmark_filter,
         lm_min_score_gap,
@@ -703,6 +756,7 @@ SymbolicLandmarkBidirectionalSearch::SymbolicLandmarkBidirectionalSearch(
       lm_node_slack_absolute(opts.get<int>("lm_node_slack_absolute")),
       lm_eval_frequency(opts.get<int>("lm_eval_frequency")),
       lm_guidance_score(opts.get_enum("lm_guidance_score")),
+      lm_guidance_scope(opts.get_enum("lm_guidance_scope")),
       lm_guidance_polarity(opts.get_enum("lm_guidance_polarity")),
       lm_landmark_filter(opts.get_enum("lm_landmark_filter")),
       lm_min_score_gap(opts.get<int>("lm_min_score_gap")),
@@ -780,6 +834,22 @@ static SearchEngine *_parse_landmark_bidirectional_ucs(OptionParser &parser) {
         "landmark coverage score used for SLBD direction selection",
         "coverage",
         guidance_scores_doc);
+    vector<string> guidance_scopes;
+    vector<string> guidance_scopes_doc;
+    guidance_scopes.push_back("seen");
+    guidance_scopes_doc.push_back(
+        "current behavior: score landmark coverage over states already "
+        "seen by each direction");
+    guidance_scopes.push_back("frontier");
+    guidance_scopes_doc.push_back(
+        "experimental behavior: score landmark coverage over the active "
+        "frontier that would be expanded next");
+    parser.add_enum_option(
+        "lm_guidance_scope",
+        guidance_scopes,
+        "state set used for SLBD landmark coverage scoring",
+        "seen",
+        guidance_scopes_doc);
     vector<string> guidance_polarities;
     vector<string> guidance_polarities_doc;
     guidance_polarities.push_back("less_covered");

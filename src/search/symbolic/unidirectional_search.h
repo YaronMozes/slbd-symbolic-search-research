@@ -95,6 +95,10 @@ namespace symbolic {
 
 	virtual int getG() const = 0;
 
+	virtual bool get_current_frontier_states(BDD &) const {
+	    return false;
+	}
+
     };
 }
 #endif // SYMBOLIC_EXPLORATION

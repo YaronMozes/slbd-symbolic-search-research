@@ -149,6 +149,7 @@ namespace symbolic {
 
         
         virtual BDD get_seen_states(bool fw_dir) const override ;
+        virtual bool get_current_frontier_states(BDD &states) const override;
 
     private: 
 
