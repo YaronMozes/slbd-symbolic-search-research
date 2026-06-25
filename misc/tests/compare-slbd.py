@@ -5,6 +5,7 @@ import csv
 import math
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -42,7 +43,8 @@ FIELDNAMES = [
     "landmarks_min_cost_sum", "lm_guidance_score",
     "lm_guidance_polarity", "lm_landmark_filter", "lm_min_score_gap",
     "lm_node_slack_absolute", "lm_guidance_start_decision",
-    "lm_guidance_max_overrides_percent",
+    "lm_guidance_max_overrides_percent", "lm_lazy_landmarks",
+    "lm_landmarks_initialized", "lm_landmark_initializations",
     "coverage_forward_unweighted", "coverage_forward_weighted",
     "coverage_backward_unweighted", "coverage_backward_weighted",
     "guidance_forward", "guidance_backward", "fallback_to_bdd_nodes",
@@ -222,6 +224,9 @@ def parse_output(stdout, returncode, elapsed):
         "lm_node_slack_absolute": "",
         "lm_guidance_start_decision": "",
         "lm_guidance_max_overrides_percent": "",
+        "lm_lazy_landmarks": "",
+        "lm_landmarks_initialized": "",
+        "lm_landmark_initializations": "",
         "guidance_forward": "",
         "guidance_backward": "",
         "fallback_to_bdd_nodes": "",
@@ -253,11 +258,16 @@ def parse_output(stdout, returncode, elapsed):
         ("lm_guidance_start_decision", r"Landmark guidance start decision: ([0-9]+)"),
         ("lm_guidance_max_overrides_percent",
          r"Landmark guidance max overrides percent: ([0-9]+)"),
+        ("lm_lazy_landmarks", r"Landmark guidance lazy landmarks: (true|false)"),
+        ("lm_landmarks_initialized",
+         r"Landmark guidance landmarks initialized: (true|false)"),
+        ("lm_landmark_initializations",
+         r"Landmark guidance landmark initializations: ([0-9]+)"),
     ]
     for key, pattern in patterns:
-        match = re.search(pattern, stdout)
-        if match:
-            result[key] = match.group(1)
+        matches = re.findall(pattern, stdout)
+        if matches:
+            result[key] = matches[-1]
 
     memory_matches = re.findall(r"([0-9]+) KB", stdout)
     if memory_matches:
@@ -332,6 +342,38 @@ def parse_output(stdout, returncode, elapsed):
     return result
 
 
+def run_planner_command(cmd, timeout):
+    popen_kwargs = {
+        "cwd": REPO_ROOT,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.STDOUT,
+        "universal_newlines": True,
+    }
+    if os.name == "posix":
+        popen_kwargs["start_new_session"] = True
+    elif hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+
+    proc = subprocess.Popen(cmd, **popen_kwargs)
+    try:
+        stdout, _ = proc.communicate(timeout=timeout)
+        return stdout, proc.returncode, False
+    except subprocess.TimeoutExpired:
+        if os.name == "posix":
+            os.killpg(proc.pid, signal.SIGTERM)
+        else:
+            proc.terminate()
+        try:
+            stdout, _ = proc.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            if os.name == "posix":
+                os.killpg(proc.pid, signal.SIGKILL)
+            else:
+                proc.kill()
+            stdout, _ = proc.communicate()
+        return stdout or "", -1, True
+
+
 def run_config(args, configs, domain, problem, config_name, search, repetition):
     task = task_name(problem, args.benchmark_dir)
     stem = safe_name("%s-%s-r%s" % (task, config_name, repetition))
@@ -352,21 +394,12 @@ def run_config(args, configs, domain, problem, config_name, search, repetition):
     ]
 
     start_time = time.time()
-    try:
-        proc = subprocess.run(
-            cmd,
-            cwd=REPO_ROOT,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            universal_newlines=True,
-            timeout=args.timeout + 120)
-        stdout = proc.stdout
-        returncode = proc.returncode
-    except subprocess.TimeoutExpired as err:
-        stdout = err.stdout or ""
+    stdout, returncode, timed_out = run_planner_command(
+        cmd,
+        args.timeout + 120)
+    if timed_out:
         stdout += "\nBenchmark harness timeout after %s seconds.\n" % (
             args.timeout + 120)
-        returncode = -1
     elapsed = time.time() - start_time
 
     with open(log_path, "w", encoding="utf-8") as log_file:
@@ -600,6 +633,23 @@ def summarize(rows, configs, planned_run_count=None):
              baseline,
              format_number(common_ratios.get(config)),
              overall_text))
+    lines.append("")
+
+    lines.append("Lazy landmark initialization")
+    for config in config_names:
+        group = [row for row in rows if row["config"] == config]
+        lazy_rows = sum(
+            1 for row in group if row.get("lm_lazy_landmarks") == "true")
+        initialized_rows = sum(
+            1 for row in group
+            if row.get("lm_landmarks_initialized") == "true")
+        initializations = sum(
+            as_int(row, "lm_landmark_initializations") for row in group)
+        lines.append(
+            "  %s: lazy_runs=%d/%d, initialized_runs=%d/%d, "
+            "initializations=%d" %
+            (config, lazy_rows, len(group), initialized_rows, len(group),
+             initializations))
     lines.append("")
 
     lines.append("Guidance and fallback rates")

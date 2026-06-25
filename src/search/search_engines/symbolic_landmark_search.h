@@ -24,6 +24,7 @@ class SymbolicLandmarkBidirectionalSearch : public symbolic_search::SymbolicSear
     int lm_min_score_gap;
     int lm_guidance_start_decision;
     int lm_guidance_max_overrides_percent;
+    bool lm_lazy_landmarks;
     bool lm_guidance;
 
 protected:
