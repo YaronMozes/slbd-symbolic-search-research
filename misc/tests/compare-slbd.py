@@ -53,6 +53,42 @@ CONFIG_PRESETS = {
          "lm_guidance_scope=frontier,lm_node_slack_absolute=5,"
          "lm_eval_frequency=10)"),
     ],
+    "ordered": [
+        ("sbd", "sbd()"),
+        ("slbd-no-guidance", "slbd(lm_guidance=false,lm_factory=lm_rhw())"),
+        ("slbd", "slbd(lm_factory=lm_rhw())"),
+        ("slbd-safe-eval10",
+         "slbd(lm_factory=lm_rhw(),lm_node_slack_percent=0,lm_eval_frequency=10)"),
+        ("slbd-frontier-abs5-eval10",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_scope=frontier,"
+         "lm_node_slack_absolute=5,lm_eval_frequency=10)"),
+        ("slbd-ordered-frontier-more-abs5-eval10",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_score=ordered,"
+         "lm_guidance_polarity=more_covered,lm_guidance_scope=frontier,"
+         "lm_node_slack_absolute=5,lm_eval_frequency=10)"),
+        ("slbd-ordered-seen-more-abs5-eval10",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_score=ordered,"
+         "lm_guidance_polarity=more_covered,lm_guidance_scope=seen,"
+         "lm_node_slack_absolute=5,lm_eval_frequency=10)"),
+        ("slbd-meeting-frontier-more-abs5-eval10",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_score=meeting,"
+         "lm_guidance_polarity=more_covered,lm_guidance_scope=frontier,"
+         "lm_node_slack_absolute=5,lm_eval_frequency=10)"),
+        ("slbd-meeting-frontier-more-abs10-eval10",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_score=meeting,"
+         "lm_guidance_polarity=more_covered,lm_guidance_scope=frontier,"
+         "lm_node_slack_absolute=10,lm_eval_frequency=10)"),
+        ("slbd-lazy-ordered-frontier-more-abs5-eval10",
+         "slbd(lm_factory=lm_rhw(),lm_lazy_landmarks=true,"
+         "lm_guidance_score=ordered,lm_guidance_polarity=more_covered,"
+         "lm_guidance_scope=frontier,lm_node_slack_absolute=5,"
+         "lm_eval_frequency=10)"),
+        ("slbd-lazy-meeting-frontier-more-abs5-eval10",
+         "slbd(lm_factory=lm_rhw(),lm_lazy_landmarks=true,"
+         "lm_guidance_score=meeting,lm_guidance_polarity=more_covered,"
+         "lm_guidance_scope=frontier,lm_node_slack_absolute=5,"
+         "lm_eval_frequency=10)"),
+    ],
 }
 
 GENERATED_FILES = ["output", "output.sas", "sas_plan"]
@@ -71,6 +107,10 @@ FIELDNAMES = [
     "lm_landmarks_initialized", "lm_landmark_initializations",
     "coverage_forward_unweighted", "coverage_forward_weighted",
     "coverage_backward_unweighted", "coverage_backward_weighted",
+    "ordered_forward_unweighted", "ordered_forward_weighted",
+    "ordered_backward_unweighted", "ordered_backward_weighted",
+    "meeting_forward_unweighted", "meeting_forward_weighted",
+    "meeting_backward_unweighted", "meeting_backward_weighted",
     "guidance_forward", "guidance_backward", "fallback_to_bdd_nodes",
     "guidance_total", "guidance_evaluated", "coverage_recomputations",
     "fallback_node_slack", "fallback_equal_score",
@@ -100,7 +140,8 @@ def parse_args():
         "--tasks-per-domain", type=int,
         help="deterministically keep at most this many sorted tasks per domain")
     parser.add_argument(
-        "--config-preset", choices=["smoke", "tuning", "confirm", "frontier"],
+        "--config-preset",
+        choices=["smoke", "tuning", "confirm", "frontier", "ordered"],
         default="smoke",
         help="configuration set to run")
     parser.add_argument(
@@ -271,6 +312,14 @@ def parse_output(stdout, returncode, elapsed):
         "coverage_forward_weighted": "",
         "coverage_backward_unweighted": "",
         "coverage_backward_weighted": "",
+        "ordered_forward_unweighted": "",
+        "ordered_forward_weighted": "",
+        "ordered_backward_unweighted": "",
+        "ordered_backward_weighted": "",
+        "meeting_forward_unweighted": "",
+        "meeting_forward_weighted": "",
+        "meeting_backward_unweighted": "",
+        "meeting_backward_weighted": "",
     }
 
     patterns = [
@@ -368,6 +417,21 @@ def parse_output(stdout, returncode, elapsed):
             result["coverage_%s_unweighted" % direction] = match.group(1)
             result["coverage_%s_weighted" % direction] = match.group(2)
 
+    for score_name, field_prefix in [
+        ("ordered score", "ordered"),
+        ("meeting score", "meeting"),
+    ]:
+        for direction in ["forward", "backward"]:
+            match = re.search(
+                r"Landmark %s %s: unweighted=([0-9]+/[0-9]+), "
+                r"weighted=([0-9]+/[0-9]+)" % (score_name, direction),
+                stdout)
+            if match:
+                result["%s_%s_unweighted" % (
+                    field_prefix, direction)] = match.group(1)
+                result["%s_%s_weighted" % (
+                    field_prefix, direction)] = match.group(2)
+
     return result
 
 
@@ -461,6 +525,13 @@ def as_int(row, field):
     try:
         return int(row[field])
     except (KeyError, TypeError, ValueError):
+        return 0
+
+
+def fraction_numerator(value):
+    try:
+        return int(str(value).split("/", 1)[0])
+    except (TypeError, ValueError):
         return 0
 
 
@@ -679,6 +750,23 @@ def summarize(rows, configs, planned_run_count=None):
             "initializations=%d" %
             (config, lazy_rows, len(group), initialized_rows, len(group),
              initializations))
+    lines.append("")
+
+    lines.append("Landmark score diagnostics")
+    for config in config_names:
+        group = [row for row in rows if row["config"] == config]
+        lines.append(
+            "  %s: ordered_fw=%d, ordered_bw=%d, meeting_fw=%d, "
+            "meeting_bw=%d" %
+            (config,
+             sum(fraction_numerator(row.get("ordered_forward_unweighted"))
+                 for row in group),
+             sum(fraction_numerator(row.get("ordered_backward_unweighted"))
+                 for row in group),
+             sum(fraction_numerator(row.get("meeting_forward_unweighted"))
+                 for row in group),
+             sum(fraction_numerator(row.get("meeting_backward_unweighted"))
+                 for row in group)))
     lines.append("")
 
     lines.append("Guidance and fallback rates")

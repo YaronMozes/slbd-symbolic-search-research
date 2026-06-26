@@ -20,6 +20,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -32,7 +33,9 @@ namespace {
 enum LandmarkGuidanceScore {
     SCORE_COVERAGE,
     SCORE_WEIGHTED,
-    SCORE_PROGRESS
+    SCORE_PROGRESS,
+    SCORE_ORDERED,
+    SCORE_MEETING
 };
 
 enum LandmarkGuidancePolarity {
@@ -69,6 +72,10 @@ const char *get_guidance_score_name(LandmarkGuidanceScore score) {
         return "weighted";
     case SCORE_PROGRESS:
         return "progress";
+    case SCORE_ORDERED:
+        return "ordered";
+    case SCORE_MEETING:
+        return "meeting";
     default:
         return "unknown";
     }
@@ -117,6 +124,8 @@ public:
         size_t parents;
         size_t children;
         BDD bdd;
+        vector<size_t> natural_parent_indices;
+        vector<size_t> natural_child_indices;
     };
 
 private:
@@ -148,6 +157,8 @@ public:
           num_disjunctive(0),
           num_conjunctive(0),
           total_min_cost(0) {
+        unordered_map<const LandmarkNode *, size_t> entry_indices;
+        vector<const LandmarkNode *> entry_nodes;
         for (const LandmarkNode *node : graph.get_nodes()) {
             if (filter == FILTER_NONGOAL && node->in_goal) {
                 continue;
@@ -172,7 +183,31 @@ public:
                                node->in_goal,
                                node->parents.size(),
                                node->children.size(),
-                               get_node_bdd(*node, mgr)});
+                               get_node_bdd(*node, mgr),
+                               vector<size_t>(),
+                               vector<size_t>()});
+            entry_indices[node] = entries.size() - 1;
+            entry_nodes.push_back(node);
+        }
+
+        for (size_t i = 0; i < entry_nodes.size(); ++i) {
+            const LandmarkNode *node = entry_nodes[i];
+            for (const auto &parent : node->parents) {
+                if (parent.second >= EdgeType::natural) {
+                    auto it = entry_indices.find(parent.first);
+                    if (it != entry_indices.end()) {
+                        entries[i].natural_parent_indices.push_back(it->second);
+                    }
+                }
+            }
+            for (const auto &child : node->children) {
+                if (child.second >= EdgeType::natural) {
+                    auto it = entry_indices.find(child.first);
+                    if (it != entry_indices.end()) {
+                        entries[i].natural_child_indices.push_back(it->second);
+                    }
+                }
+            }
         }
     }
 
@@ -206,6 +241,10 @@ struct LandmarkCoverageSnapshot {
     int covered_cost = 0;
     int newly_covered = 0;
     int newly_covered_cost = 0;
+    int ordered_covered = 0;
+    int ordered_covered_cost = 0;
+    int meeting_covered = 0;
+    int meeting_covered_cost = 0;
     vector<char> covered_landmarks;
 };
 
@@ -216,6 +255,18 @@ struct LandmarkScoreComparison {
 
 class LandmarkCoverage {
     LandmarkBDDIndex index;
+
+    static bool prerequisites_covered(
+        const LandmarkCoverageSnapshot &snapshot,
+        const vector<size_t> &prerequisite_indices) {
+        for (size_t index : prerequisite_indices) {
+            if (index >= snapshot.covered_landmarks.size() ||
+                !snapshot.covered_landmarks[index]) {
+                return false;
+            }
+        }
+        return true;
+    }
 
 public:
     explicit LandmarkCoverage(LandmarkBDDIndex &&index_)
@@ -248,6 +299,42 @@ public:
             if (snapshot.covered_landmarks[i] && !was_covered) {
                 ++snapshot.newly_covered;
                 snapshot.newly_covered_cost += entries[i].min_cost;
+            }
+        }
+    }
+
+    void annotate_ordered_score(
+        LandmarkCoverageSnapshot &snapshot,
+        bool forward) const {
+        snapshot.ordered_covered = 0;
+        snapshot.ordered_covered_cost = 0;
+        const vector<LandmarkBDDIndex::Entry> &entries = index.get_entries();
+        for (size_t i = 0; i < snapshot.covered_landmarks.size(); ++i) {
+            if (!snapshot.covered_landmarks[i]) {
+                continue;
+            }
+            const vector<size_t> &prerequisites = forward ?
+                entries[i].natural_parent_indices :
+                entries[i].natural_child_indices;
+            if (prerequisites_covered(snapshot, prerequisites)) {
+                ++snapshot.ordered_covered;
+                snapshot.ordered_covered_cost += entries[i].min_cost;
+            }
+        }
+    }
+
+    void annotate_meeting_score(
+        LandmarkCoverageSnapshot &snapshot,
+        const LandmarkCoverageSnapshot &opposite_seen_snapshot) const {
+        snapshot.meeting_covered = 0;
+        snapshot.meeting_covered_cost = 0;
+        const vector<LandmarkBDDIndex::Entry> &entries = index.get_entries();
+        for (size_t i = 0; i < snapshot.covered_landmarks.size(); ++i) {
+            if (snapshot.covered_landmarks[i] &&
+                i < opposite_seen_snapshot.covered_landmarks.size() &&
+                opposite_seen_snapshot.covered_landmarks[i]) {
+                ++snapshot.meeting_covered;
+                snapshot.meeting_covered_cost += entries[i].min_cost;
             }
         }
     }
@@ -349,12 +436,64 @@ class LandmarkGuidedBidirectionalSearch : public BidirectionalSearch {
             coverage.annotate_progress(
                 next_bw_coverage,
                 have_coverage ? &last_bw_coverage : nullptr);
+            if (guidance_score == SCORE_ORDERED) {
+                coverage.annotate_ordered_score(next_fw_coverage, true);
+                coverage.annotate_ordered_score(next_bw_coverage, false);
+            } else if (guidance_score == SCORE_MEETING) {
+                if (guidance_scope == SCOPE_SEEN) {
+                    coverage.annotate_meeting_score(
+                        next_fw_coverage,
+                        next_bw_coverage);
+                    coverage.annotate_meeting_score(
+                        next_bw_coverage,
+                        next_fw_coverage);
+                } else {
+                    LandmarkCoverageSnapshot fw_seen_coverage =
+                        coverage.compute(getFw()->get_seen_states(true));
+                    LandmarkCoverageSnapshot bw_seen_coverage =
+                        coverage.compute(getBw()->get_seen_states(false));
+                    coverage.annotate_meeting_score(
+                        next_fw_coverage,
+                        bw_seen_coverage);
+                    coverage.annotate_meeting_score(
+                        next_bw_coverage,
+                        fw_seen_coverage);
+                }
+            }
             last_fw_coverage = next_fw_coverage;
             last_bw_coverage = next_bw_coverage;
             ++coverage_recomputation_count;
             have_coverage = true;
         }
         return true;
+    }
+
+    void update_score_diagnostics() const {
+        if (!landmark_coverage || !have_coverage) {
+            return;
+        }
+        LandmarkCoverage &coverage = *landmark_coverage;
+        coverage.annotate_ordered_score(last_fw_coverage, true);
+        coverage.annotate_ordered_score(last_bw_coverage, false);
+        if (guidance_scope == SCOPE_SEEN) {
+            coverage.annotate_meeting_score(
+                last_fw_coverage,
+                last_bw_coverage);
+            coverage.annotate_meeting_score(
+                last_bw_coverage,
+                last_fw_coverage);
+        } else {
+            LandmarkCoverageSnapshot fw_seen_coverage =
+                coverage.compute(getFw()->get_seen_states(true));
+            LandmarkCoverageSnapshot bw_seen_coverage =
+                coverage.compute(getBw()->get_seen_states(false));
+            coverage.annotate_meeting_score(
+                last_fw_coverage,
+                bw_seen_coverage);
+            coverage.annotate_meeting_score(
+                last_bw_coverage,
+                fw_seen_coverage);
+        }
     }
 
     void count_fallback_reason(FallbackReason reason) const {
@@ -419,6 +558,54 @@ class LandmarkGuidedBidirectionalSearch : public BidirectionalSearch {
                 result.gap = abs(
                     last_fw_coverage.newly_covered_cost -
                     last_bw_coverage.newly_covered_cost);
+                return result;
+            }
+            return result;
+        }
+
+        if (guidance_score == SCORE_ORDERED) {
+            if (last_fw_coverage.ordered_covered !=
+                last_bw_coverage.ordered_covered) {
+                result.comparison =
+                    last_fw_coverage.ordered_covered <
+                    last_bw_coverage.ordered_covered ? -1 : 1;
+                result.gap = abs(
+                    last_fw_coverage.ordered_covered -
+                    last_bw_coverage.ordered_covered);
+                return result;
+            }
+            if (last_fw_coverage.ordered_covered_cost !=
+                last_bw_coverage.ordered_covered_cost) {
+                result.comparison =
+                    last_fw_coverage.ordered_covered_cost <
+                    last_bw_coverage.ordered_covered_cost ? -1 : 1;
+                result.gap = abs(
+                    last_fw_coverage.ordered_covered_cost -
+                    last_bw_coverage.ordered_covered_cost);
+                return result;
+            }
+            return result;
+        }
+
+        if (guidance_score == SCORE_MEETING) {
+            if (last_fw_coverage.meeting_covered !=
+                last_bw_coverage.meeting_covered) {
+                result.comparison =
+                    last_fw_coverage.meeting_covered <
+                    last_bw_coverage.meeting_covered ? -1 : 1;
+                result.gap = abs(
+                    last_fw_coverage.meeting_covered -
+                    last_bw_coverage.meeting_covered);
+                return result;
+            }
+            if (last_fw_coverage.meeting_covered_cost !=
+                last_bw_coverage.meeting_covered_cost) {
+                result.comparison =
+                    last_fw_coverage.meeting_covered_cost <
+                    last_bw_coverage.meeting_covered_cost ? -1 : 1;
+                result.gap = abs(
+                    last_fw_coverage.meeting_covered_cost -
+                    last_bw_coverage.meeting_covered_cost);
                 return result;
             }
             return result;
@@ -641,6 +828,7 @@ public:
         BidirectionalSearch::statistics();
         if (landmark_coverage) {
             refresh_coverage_if_needed();
+            update_score_diagnostics();
         }
         print_landmark_summary();
         cout << "Landmark guidance score: "
@@ -699,6 +887,26 @@ public:
              << last_bw_coverage.covered << "/"
              << total_landmarks
              << ", weighted=" << last_bw_coverage.covered_cost
+             << "/" << total_landmark_cost << endl;
+        cout << "Landmark ordered score forward: unweighted="
+             << last_fw_coverage.ordered_covered << "/"
+             << total_landmarks
+             << ", weighted=" << last_fw_coverage.ordered_covered_cost
+             << "/" << total_landmark_cost << endl;
+        cout << "Landmark ordered score backward: unweighted="
+             << last_bw_coverage.ordered_covered << "/"
+             << total_landmarks
+             << ", weighted=" << last_bw_coverage.ordered_covered_cost
+             << "/" << total_landmark_cost << endl;
+        cout << "Landmark meeting score forward: unweighted="
+             << last_fw_coverage.meeting_covered << "/"
+             << total_landmarks
+             << ", weighted=" << last_fw_coverage.meeting_covered_cost
+             << "/" << total_landmark_cost << endl;
+        cout << "Landmark meeting score backward: unweighted="
+             << last_bw_coverage.meeting_covered << "/"
+             << total_landmarks
+             << ", weighted=" << last_bw_coverage.meeting_covered_cost
              << "/" << total_landmark_cost << endl;
     }
 };
@@ -828,6 +1036,14 @@ static SearchEngine *_parse_landmark_bidirectional_ucs(OptionParser &parser) {
     guidance_scores_doc.push_back(
         "prefer according to newly covered landmarks since the previous "
         "coverage recomputation");
+    guidance_scores.push_back("ordered");
+    guidance_scores_doc.push_back(
+        "prefer according to landmarks whose natural-or-stronger ordering "
+        "prerequisites are already covered in the same direction");
+    guidance_scores.push_back("meeting");
+    guidance_scores_doc.push_back(
+        "prefer according to landmarks that are covered by one direction's "
+        "scoring scope and by the opposite direction's seen states");
     parser.add_enum_option(
         "lm_guidance_score",
         guidance_scores,
