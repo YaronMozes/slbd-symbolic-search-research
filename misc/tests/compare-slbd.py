@@ -16,7 +16,50 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 DEFAULT_BENCHMARK_DIR = os.path.join(REPO_ROOT, "misc", "tests", "benchmarks")
 DEFAULT_RESULTS_DIR = os.path.join(REPO_ROOT, "slbd-results")
 
+# Oracle diagnostic: fully UNMUZZLE guidance (gate wide open, every decision
+# overridden whenever landmarks have a non-tied opinion) and compare following
+# the landmark direction against following its opposite (polarity flip). If
+# "follow" and "anti" straddle sbd, the landmark direction signal carries real
+# information (possibly inverted); if both are ~equally worse than sbd, the
+# signal is noise and per-step landmark direction guidance should be abandoned
+# in favour of a different signal. This changes NOTHING about defaults.
+_ORACLE_OPEN = (
+    "lm_node_slack_absolute=-1,lm_node_slack_percent=1000000000,"
+    "lm_guidance_max_overrides_percent=100,lm_min_score_gap=1,"
+    "lm_guidance_start_decision=1,lm_eval_frequency=1")
+
 CONFIG_PRESETS = {
+    "oracle-meet": [
+        ("sbd", "sbd()"),
+        ("meet-follow",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_score=meet_bdd,"
+         "lm_guidance_polarity=less_covered," + _ORACLE_OPEN + ")"),
+        ("meet-anti",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_score=meet_bdd,"
+         "lm_guidance_polarity=more_covered," + _ORACLE_OPEN + ")"),
+        ("balance-follow",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_score=balance_bdd,"
+         "lm_guidance_polarity=less_covered," + _ORACLE_OPEN + ")"),
+        ("balance-anti",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_score=balance_bdd,"
+         "lm_guidance_polarity=more_covered," + _ORACLE_OPEN + ")"),
+    ],
+    "oracle": [
+        ("sbd", "sbd()"),
+        ("slbd-no-guidance", "slbd(lm_guidance=false,lm_factory=lm_rhw())"),
+        ("oracle-follow-weighted",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_score=weighted,"
+         "lm_guidance_polarity=less_covered," + _ORACLE_OPEN + ")"),
+        ("oracle-anti-weighted",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_score=weighted,"
+         "lm_guidance_polarity=more_covered," + _ORACLE_OPEN + ")"),
+        ("oracle-follow-agenda",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_score=agenda,"
+         "lm_guidance_polarity=less_covered," + _ORACLE_OPEN + ")"),
+        ("oracle-anti-agenda",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_score=agenda,"
+         "lm_guidance_polarity=more_covered," + _ORACLE_OPEN + ")"),
+    ],
     "smoke": [
         ("sbd", "sbd()"),
         ("slbd", "slbd(lm_factory=lm_rhw())"),
@@ -89,6 +132,41 @@ CONFIG_PRESETS = {
          "lm_guidance_scope=frontier,lm_node_slack_absolute=5,"
          "lm_eval_frequency=10)"),
     ],
+    "agenda": [
+        ("sbd", "sbd()"),
+        ("slbd-no-guidance", "slbd(lm_guidance=false,lm_factory=lm_rhw())"),
+        ("slbd", "slbd(lm_factory=lm_rhw())"),
+        ("slbd-safe-eval10",
+         "slbd(lm_factory=lm_rhw(),lm_node_slack_percent=0,lm_eval_frequency=10)"),
+        ("slbd-meeting-frontier-more-abs5-eval10",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_score=meeting,"
+         "lm_guidance_polarity=more_covered,lm_guidance_scope=frontier,"
+         "lm_node_slack_absolute=5,lm_eval_frequency=10)"),
+        ("slbd-agenda-more-abs5-eval10",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_score=agenda,"
+         "lm_guidance_polarity=more_covered,lm_node_slack_absolute=5,"
+         "lm_eval_frequency=10)"),
+        ("slbd-agenda-more-abs10-eval10",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_score=agenda,"
+         "lm_guidance_polarity=more_covered,lm_node_slack_absolute=10,"
+         "lm_eval_frequency=10)"),
+        ("slbd-agenda-weighted-more-abs5-eval10",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_score=agenda_weighted,"
+         "lm_guidance_polarity=more_covered,lm_node_slack_absolute=5,"
+         "lm_eval_frequency=10)"),
+        ("slbd-agenda-meeting-more-abs5-eval10",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_score=agenda_meeting,"
+         "lm_guidance_polarity=more_covered,lm_node_slack_absolute=5,"
+         "lm_eval_frequency=10)"),
+        ("slbd-agenda-more-gap2-abs5-eval10",
+         "slbd(lm_factory=lm_rhw(),lm_guidance_score=agenda,"
+         "lm_guidance_polarity=more_covered,lm_node_slack_absolute=5,"
+         "lm_eval_frequency=10,lm_min_score_gap=2)"),
+        ("slbd-lazy-agenda-more-abs5-eval10",
+         "slbd(lm_factory=lm_rhw(),lm_lazy_landmarks=true,"
+         "lm_guidance_score=agenda,lm_guidance_polarity=more_covered,"
+         "lm_node_slack_absolute=5,lm_eval_frequency=10)"),
+    ],
 }
 
 GENERATED_FILES = ["output", "output.sas", "sas_plan"]
@@ -111,6 +189,10 @@ FIELDNAMES = [
     "ordered_backward_unweighted", "ordered_backward_weighted",
     "meeting_forward_unweighted", "meeting_forward_weighted",
     "meeting_backward_unweighted", "meeting_backward_weighted",
+    "agenda_forward_unweighted", "agenda_forward_weighted",
+    "agenda_backward_unweighted", "agenda_backward_weighted",
+    "agenda_meeting_forward_unweighted", "agenda_meeting_forward_weighted",
+    "agenda_meeting_backward_unweighted", "agenda_meeting_backward_weighted",
     "guidance_forward", "guidance_backward", "fallback_to_bdd_nodes",
     "guidance_total", "guidance_evaluated", "coverage_recomputations",
     "fallback_node_slack", "fallback_equal_score",
@@ -141,7 +223,9 @@ def parse_args():
         help="deterministically keep at most this many sorted tasks per domain")
     parser.add_argument(
         "--config-preset",
-        choices=["smoke", "tuning", "confirm", "frontier", "ordered"],
+        choices=[
+            "smoke", "tuning", "confirm", "frontier", "ordered", "agenda",
+            "oracle", "oracle-meet"],
         default="smoke",
         help="configuration set to run")
     parser.add_argument(
@@ -320,6 +404,14 @@ def parse_output(stdout, returncode, elapsed):
         "meeting_forward_weighted": "",
         "meeting_backward_unweighted": "",
         "meeting_backward_weighted": "",
+        "agenda_forward_unweighted": "",
+        "agenda_forward_weighted": "",
+        "agenda_backward_unweighted": "",
+        "agenda_backward_weighted": "",
+        "agenda_meeting_forward_unweighted": "",
+        "agenda_meeting_forward_weighted": "",
+        "agenda_meeting_backward_unweighted": "",
+        "agenda_meeting_backward_weighted": "",
     }
 
     patterns = [
@@ -420,6 +512,8 @@ def parse_output(stdout, returncode, elapsed):
     for score_name, field_prefix in [
         ("ordered score", "ordered"),
         ("meeting score", "meeting"),
+        ("agenda score", "agenda"),
+        ("agenda meeting score", "agenda_meeting"),
     ]:
         for direction in ["forward", "backward"]:
             match = re.search(
@@ -757,7 +851,8 @@ def summarize(rows, configs, planned_run_count=None):
         group = [row for row in rows if row["config"] == config]
         lines.append(
             "  %s: ordered_fw=%d, ordered_bw=%d, meeting_fw=%d, "
-            "meeting_bw=%d" %
+            "meeting_bw=%d, agenda_fw=%d, agenda_bw=%d, "
+            "agenda_meeting_fw=%d, agenda_meeting_bw=%d" %
             (config,
              sum(fraction_numerator(row.get("ordered_forward_unweighted"))
                  for row in group),
@@ -766,6 +861,14 @@ def summarize(rows, configs, planned_run_count=None):
              sum(fraction_numerator(row.get("meeting_forward_unweighted"))
                  for row in group),
              sum(fraction_numerator(row.get("meeting_backward_unweighted"))
+                 for row in group),
+             sum(fraction_numerator(row.get("agenda_forward_unweighted"))
+                 for row in group),
+             sum(fraction_numerator(row.get("agenda_backward_unweighted"))
+                 for row in group),
+             sum(fraction_numerator(row.get("agenda_meeting_forward_unweighted"))
+                 for row in group),
+             sum(fraction_numerator(row.get("agenda_meeting_backward_unweighted"))
                  for row in group)))
     lines.append("")
 

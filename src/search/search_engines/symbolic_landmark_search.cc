@@ -1,5 +1,6 @@
 #include "symbolic_landmark_search.h"
 
+#include "../globals.h"
 #include "../heuristic.h"
 #include "../landmarks/exploration.h"
 #include "../landmarks/landmark_factory.h"
@@ -19,6 +20,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -35,7 +37,19 @@ enum LandmarkGuidanceScore {
     SCORE_WEIGHTED,
     SCORE_PROGRESS,
     SCORE_ORDERED,
-    SCORE_MEETING
+    SCORE_MEETING,
+    SCORE_AGENDA,
+    SCORE_AGENDA_WEIGHTED,
+    SCORE_AGENDA_MEETING,
+    // Meet-in-the-middle signal: no landmarks. Scores each direction by the
+    // number of states shared between its next frontier and the opposite
+    // direction's reached (closed) set, i.e. how close that direction is to
+    // connecting the two search perimeters.
+    SCORE_MEET_BDD,
+    // Meet-in-the-middle balancing: no landmarks. Scores each direction by the
+    // number of states in its own reached set, so guidance can prefer the
+    // lagging (smaller) perimeter to balance the two searches.
+    SCORE_BALANCE_BDD
 };
 
 enum LandmarkGuidancePolarity {
@@ -76,6 +90,16 @@ const char *get_guidance_score_name(LandmarkGuidanceScore score) {
         return "ordered";
     case SCORE_MEETING:
         return "meeting";
+    case SCORE_AGENDA:
+        return "agenda";
+    case SCORE_AGENDA_WEIGHTED:
+        return "agenda_weighted";
+    case SCORE_AGENDA_MEETING:
+        return "agenda_meeting";
+    case SCORE_MEET_BDD:
+        return "meet_bdd";
+    case SCORE_BALANCE_BDD:
+        return "balance_bdd";
     default:
         return "unknown";
     }
@@ -245,6 +269,10 @@ struct LandmarkCoverageSnapshot {
     int ordered_covered_cost = 0;
     int meeting_covered = 0;
     int meeting_covered_cost = 0;
+    int agenda_open = 0;
+    int agenda_open_cost = 0;
+    int agenda_meeting_open = 0;
+    int agenda_meeting_open_cost = 0;
     vector<char> covered_landmarks;
 };
 
@@ -339,6 +367,48 @@ public:
         }
     }
 
+    void annotate_agenda_score(
+        LandmarkCoverageSnapshot &snapshot,
+        bool forward) const {
+        snapshot.agenda_open = 0;
+        snapshot.agenda_open_cost = 0;
+        const vector<LandmarkBDDIndex::Entry> &entries = index.get_entries();
+        for (size_t i = 0; i < snapshot.covered_landmarks.size(); ++i) {
+            if (snapshot.covered_landmarks[i]) {
+                continue;
+            }
+            const vector<size_t> &prerequisites = forward ?
+                entries[i].natural_parent_indices :
+                entries[i].natural_child_indices;
+            if (prerequisites_covered(snapshot, prerequisites)) {
+                ++snapshot.agenda_open;
+                snapshot.agenda_open_cost += entries[i].min_cost;
+            }
+        }
+    }
+
+    void annotate_agenda_meeting_score(
+        LandmarkCoverageSnapshot &snapshot,
+        const LandmarkCoverageSnapshot &opposite_seen_snapshot,
+        bool forward) const {
+        snapshot.agenda_meeting_open = 0;
+        snapshot.agenda_meeting_open_cost = 0;
+        const vector<LandmarkBDDIndex::Entry> &entries = index.get_entries();
+        for (size_t i = 0; i < snapshot.covered_landmarks.size(); ++i) {
+            if (!snapshot.covered_landmarks[i] &&
+                i < opposite_seen_snapshot.covered_landmarks.size() &&
+                opposite_seen_snapshot.covered_landmarks[i]) {
+                const vector<size_t> &prerequisites = forward ?
+                    entries[i].natural_parent_indices :
+                    entries[i].natural_child_indices;
+                if (prerequisites_covered(snapshot, prerequisites)) {
+                    ++snapshot.agenda_meeting_open;
+                    snapshot.agenda_meeting_open_cost += entries[i].min_cost;
+                }
+            }
+        }
+    }
+
     void print_summary() const {
         cout << "Landmark guidance index: " << index.size()
              << " landmarks (simple: " << index.simple_count()
@@ -372,6 +442,10 @@ class LandmarkGuidedBidirectionalSearch : public BidirectionalSearch {
     int guidance_start_decision;
     int guidance_max_overrides_percent;
     bool lazy_landmarks;
+    // Diagnostic only (env var SLBD_TRACE_FRONTIER): logs per-decision forward
+    // and backward BDD sizes so we can profile the search's blow-up. Does not
+    // affect any decision.
+    bool trace_frontier;
 
     mutable int decision_count;
     mutable int guidance_fw_count;
@@ -391,6 +465,9 @@ class LandmarkGuidedBidirectionalSearch : public BidirectionalSearch {
     mutable LandmarkCoverageSnapshot last_fw_coverage;
     mutable LandmarkCoverageSnapshot last_bw_coverage;
     mutable bool have_coverage;
+    mutable double last_meet_fw;
+    mutable double last_meet_bw;
+    mutable bool have_meet;
 
     bool node_estimates_outside_slack(long fw_nodes, long bw_nodes) const {
         if (node_slack_absolute >= 0) {
@@ -417,13 +494,95 @@ class LandmarkGuidedBidirectionalSearch : public BidirectionalSearch {
             !states.IsZero();
     }
 
+    bool score_uses_agenda() const {
+        return guidance_score == SCORE_AGENDA ||
+            guidance_score == SCORE_AGENDA_WEIGHTED ||
+            guidance_score == SCORE_AGENDA_MEETING;
+    }
+
+    // True for the landmark-free meet-in-the-middle scores, which bypass the
+    // landmark graph and BDD index entirely.
+    bool score_skips_landmarks() const {
+        return guidance_score == SCORE_MEET_BDD ||
+            guidance_score == SCORE_BALANCE_BDD;
+    }
+
+    // Recompute the meet-in-the-middle scores into last_meet_fw/last_meet_bw.
+    // SCORE_MEET_BDD: states shared between each direction's next frontier and
+    // the opposite direction's reached set (connection proximity).
+    // SCORE_BALANCE_BDD: states in each direction's own reached set (so the
+    // lagging perimeter can be preferred). Returns false (caller falls back to
+    // the BDD-node choice) only if a needed frontier is unavailable.
+    bool refresh_meet_if_needed() const {
+        if (have_meet && decision_count % eval_frequency != 0) {
+            return true;
+        }
+        SymVariables *vars = mgr->getVars();
+        if (guidance_score == SCORE_BALANCE_BDD) {
+            last_meet_fw = vars->numStates(getFw()->get_seen_states(true));
+            last_meet_bw = vars->numStates(getBw()->get_seen_states(false));
+        } else {
+            BDD fw_frontier = mgr->zeroBDD();
+            BDD bw_frontier = mgr->zeroBDD();
+            if (!getFw()->get_current_frontier_states(fw_frontier) ||
+                !getBw()->get_current_frontier_states(bw_frontier)) {
+                return false;
+            }
+            BDD fw_reached = getFw()->get_seen_states(true);
+            BDD bw_reached = getBw()->get_seen_states(false);
+            last_meet_fw = vars->numStates(fw_frontier * bw_reached);
+            last_meet_bw = vars->numStates(bw_frontier * fw_reached);
+        }
+        ++coverage_recomputation_count;
+        have_meet = true;
+        return true;
+    }
+
+    void annotate_agenda_scores(
+        LandmarkCoverage &coverage,
+        LandmarkCoverageSnapshot &fw_snapshot,
+        LandmarkCoverageSnapshot &bw_snapshot) const {
+        LandmarkCoverageSnapshot fw_seen_coverage =
+            coverage.compute(getFw()->get_seen_states(true));
+        LandmarkCoverageSnapshot bw_seen_coverage =
+            coverage.compute(getBw()->get_seen_states(false));
+        coverage.annotate_agenda_score(fw_seen_coverage, true);
+        coverage.annotate_agenda_score(bw_seen_coverage, false);
+        coverage.annotate_agenda_meeting_score(
+            fw_seen_coverage,
+            bw_seen_coverage,
+            true);
+        coverage.annotate_agenda_meeting_score(
+            bw_seen_coverage,
+            fw_seen_coverage,
+            false);
+
+        fw_snapshot.agenda_open = fw_seen_coverage.agenda_open;
+        fw_snapshot.agenda_open_cost = fw_seen_coverage.agenda_open_cost;
+        fw_snapshot.agenda_meeting_open =
+            fw_seen_coverage.agenda_meeting_open;
+        fw_snapshot.agenda_meeting_open_cost =
+            fw_seen_coverage.agenda_meeting_open_cost;
+        bw_snapshot.agenda_open = bw_seen_coverage.agenda_open;
+        bw_snapshot.agenda_open_cost = bw_seen_coverage.agenda_open_cost;
+        bw_snapshot.agenda_meeting_open =
+            bw_seen_coverage.agenda_meeting_open;
+        bw_snapshot.agenda_meeting_open_cost =
+            bw_seen_coverage.agenda_meeting_open_cost;
+    }
+
     bool refresh_coverage_if_needed() const {
         if (!have_coverage || decision_count % eval_frequency == 0) {
             BDD fw_states = mgr->zeroBDD();
             BDD bw_states = mgr->zeroBDD();
-            if (!get_coverage_states(getFw(), true, fw_states) ||
-                !get_coverage_states(getBw(), false, bw_states)) {
-                return false;
+            if (score_uses_agenda()) {
+                fw_states = getFw()->get_seen_states(true);
+                bw_states = getBw()->get_seen_states(false);
+            } else {
+                if (!get_coverage_states(getFw(), true, fw_states) ||
+                    !get_coverage_states(getBw(), false, bw_states)) {
+                    return false;
+                }
             }
             LandmarkCoverage &coverage = *landmark_coverage;
             LandmarkCoverageSnapshot next_fw_coverage =
@@ -460,6 +619,18 @@ class LandmarkGuidedBidirectionalSearch : public BidirectionalSearch {
                         fw_seen_coverage);
                 }
             }
+            if (score_uses_agenda()) {
+                coverage.annotate_agenda_score(next_fw_coverage, true);
+                coverage.annotate_agenda_score(next_bw_coverage, false);
+                coverage.annotate_agenda_meeting_score(
+                    next_fw_coverage,
+                    next_bw_coverage,
+                    true);
+                coverage.annotate_agenda_meeting_score(
+                    next_bw_coverage,
+                    next_fw_coverage,
+                    false);
+            }
             last_fw_coverage = next_fw_coverage;
             last_bw_coverage = next_bw_coverage;
             ++coverage_recomputation_count;
@@ -494,6 +665,7 @@ class LandmarkGuidedBidirectionalSearch : public BidirectionalSearch {
                 last_bw_coverage,
                 fw_seen_coverage);
         }
+        annotate_agenda_scores(coverage, last_fw_coverage, last_bw_coverage);
     }
 
     void count_fallback_reason(FallbackReason reason) const {
@@ -527,6 +699,16 @@ class LandmarkGuidedBidirectionalSearch : public BidirectionalSearch {
 
     LandmarkScoreComparison compare_landmark_scores() const {
         LandmarkScoreComparison result;
+        if (score_skips_landmarks()) {
+            if (last_meet_fw != last_meet_bw) {
+                result.comparison = last_meet_fw < last_meet_bw ? -1 : 1;
+                double diff = last_meet_fw > last_meet_bw ?
+                    last_meet_fw - last_meet_bw : last_meet_bw - last_meet_fw;
+                result.gap = diff > 2147483647.0 ?
+                    2147483647 : static_cast<int>(diff);
+            }
+            return result;
+        }
         if (guidance_score == SCORE_WEIGHTED) {
             if (last_fw_coverage.covered_cost != last_bw_coverage.covered_cost) {
                 result.comparison =
@@ -611,6 +793,98 @@ class LandmarkGuidedBidirectionalSearch : public BidirectionalSearch {
             return result;
         }
 
+        if (guidance_score == SCORE_AGENDA) {
+            if (last_fw_coverage.agenda_open !=
+                last_bw_coverage.agenda_open) {
+                result.comparison =
+                    last_fw_coverage.agenda_open <
+                    last_bw_coverage.agenda_open ? -1 : 1;
+                result.gap = abs(
+                    last_fw_coverage.agenda_open -
+                    last_bw_coverage.agenda_open);
+                return result;
+            }
+            if (last_fw_coverage.agenda_open_cost !=
+                last_bw_coverage.agenda_open_cost) {
+                result.comparison =
+                    last_fw_coverage.agenda_open_cost <
+                    last_bw_coverage.agenda_open_cost ? -1 : 1;
+                result.gap = abs(
+                    last_fw_coverage.agenda_open_cost -
+                    last_bw_coverage.agenda_open_cost);
+                return result;
+            }
+            return result;
+        }
+
+        if (guidance_score == SCORE_AGENDA_WEIGHTED) {
+            if (last_fw_coverage.agenda_open_cost !=
+                last_bw_coverage.agenda_open_cost) {
+                result.comparison =
+                    last_fw_coverage.agenda_open_cost <
+                    last_bw_coverage.agenda_open_cost ? -1 : 1;
+                result.gap = abs(
+                    last_fw_coverage.agenda_open_cost -
+                    last_bw_coverage.agenda_open_cost);
+                return result;
+            }
+            if (last_fw_coverage.agenda_open !=
+                last_bw_coverage.agenda_open) {
+                result.comparison =
+                    last_fw_coverage.agenda_open <
+                    last_bw_coverage.agenda_open ? -1 : 1;
+                result.gap = abs(
+                    last_fw_coverage.agenda_open -
+                    last_bw_coverage.agenda_open);
+                return result;
+            }
+            return result;
+        }
+
+        if (guidance_score == SCORE_AGENDA_MEETING) {
+            if (last_fw_coverage.agenda_meeting_open !=
+                last_bw_coverage.agenda_meeting_open) {
+                result.comparison =
+                    last_fw_coverage.agenda_meeting_open <
+                    last_bw_coverage.agenda_meeting_open ? -1 : 1;
+                result.gap = abs(
+                    last_fw_coverage.agenda_meeting_open -
+                    last_bw_coverage.agenda_meeting_open);
+                return result;
+            }
+            if (last_fw_coverage.agenda_meeting_open_cost !=
+                last_bw_coverage.agenda_meeting_open_cost) {
+                result.comparison =
+                    last_fw_coverage.agenda_meeting_open_cost <
+                    last_bw_coverage.agenda_meeting_open_cost ? -1 : 1;
+                result.gap = abs(
+                    last_fw_coverage.agenda_meeting_open_cost -
+                    last_bw_coverage.agenda_meeting_open_cost);
+                return result;
+            }
+            if (last_fw_coverage.agenda_open_cost !=
+                last_bw_coverage.agenda_open_cost) {
+                result.comparison =
+                    last_fw_coverage.agenda_open_cost <
+                    last_bw_coverage.agenda_open_cost ? -1 : 1;
+                result.gap = abs(
+                    last_fw_coverage.agenda_open_cost -
+                    last_bw_coverage.agenda_open_cost);
+                return result;
+            }
+            if (last_fw_coverage.agenda_open !=
+                last_bw_coverage.agenda_open) {
+                result.comparison =
+                    last_fw_coverage.agenda_open <
+                    last_bw_coverage.agenda_open ? -1 : 1;
+                result.gap = abs(
+                    last_fw_coverage.agenda_open -
+                    last_bw_coverage.agenda_open);
+                return result;
+            }
+            return result;
+        }
+
         if (last_fw_coverage.covered != last_bw_coverage.covered) {
             result.comparison =
                 last_fw_coverage.covered < last_bw_coverage.covered ? -1 : 1;
@@ -677,6 +951,21 @@ protected:
     virtual UnidirectionalSearch *selectBestDirection() const override {
         ++decision_count;
 
+        if (trace_frontier) {
+            cout << "FRONTIER_TRACE decision=" << decision_count
+                 << " fw_g=" << getFw()->getG()
+                 << " bw_g=" << getBw()->getG()
+                 << " fw_reached_nodes="
+                 << getFw()->get_seen_states(true).nodeCount()
+                 << " bw_reached_nodes="
+                 << getBw()->get_seen_states(false).nodeCount()
+                 << " fw_next_nodes=" << getFw()->nextStepNodes()
+                 << " bw_next_nodes=" << getBw()->nextStepNodes()
+                 << " fw_searchable=" << getFw()->isSearchable()
+                 << " bw_searchable=" << getBw()->isSearchable()
+                 << endl;
+        }
+
         bool fw_searchable = getFw()->isSearchable();
         bool bw_searchable = getBw()->isSearchable();
         if (fw_searchable && !bw_searchable) {
@@ -693,7 +982,7 @@ protected:
             return select_by_fallback(FALLBACK_DISABLED_OR_NO_LANDMARKS);
         }
 
-        if (!lazy_landmarks && landmark_count() == 0) {
+        if (!score_skips_landmarks() && !lazy_landmarks && landmark_count() == 0) {
             return select_by_fallback(FALLBACK_DISABLED_OR_NO_LANDMARKS);
         }
 
@@ -711,12 +1000,19 @@ protected:
             return select_by_fallback(FALLBACK_NODE_SLACK);
         }
 
-        if (!ensure_landmark_coverage_initialized() || landmark_count() == 0) {
-            return select_by_fallback(FALLBACK_DISABLED_OR_NO_LANDMARKS);
-        }
+        if (score_skips_landmarks()) {
+            if (!refresh_meet_if_needed()) {
+                return select_by_fallback(FALLBACK_FRONTIER_UNAVAILABLE);
+            }
+        } else {
+            if (!ensure_landmark_coverage_initialized() ||
+                landmark_count() == 0) {
+                return select_by_fallback(FALLBACK_DISABLED_OR_NO_LANDMARKS);
+            }
 
-        if (!refresh_coverage_if_needed()) {
-            return select_by_fallback(FALLBACK_FRONTIER_UNAVAILABLE);
+            if (!refresh_coverage_if_needed()) {
+                return select_by_fallback(FALLBACK_FRONTIER_UNAVAILABLE);
+            }
         }
         ++guidance_evaluated_count;
 
@@ -783,6 +1079,7 @@ public:
           guidance_max_overrides_percent(
               min(100, max(0, guidance_max_overrides_percent_))),
           lazy_landmarks(lazy_landmarks_),
+          trace_frontier(std::getenv("SLBD_TRACE_FRONTIER") != nullptr),
           decision_count(0),
           guidance_fw_count(0),
           guidance_bw_count(0),
@@ -798,7 +1095,10 @@ public:
           fallback_override_budget_count(0),
           fallback_frontier_unavailable_count(0),
           landmark_initialization_count(landmark_coverage ? 1 : 0),
-          have_coverage(false) {
+          have_coverage(false),
+          last_meet_fw(0),
+          last_meet_bw(0),
+          have_meet(false) {
         print_landmark_summary();
         cout << "Landmark guidance score: "
              << get_guidance_score_name(guidance_score) << endl;
@@ -908,8 +1208,113 @@ public:
              << total_landmarks
              << ", weighted=" << last_bw_coverage.meeting_covered_cost
              << "/" << total_landmark_cost << endl;
+        cout << "Landmark agenda score forward: unweighted="
+             << last_fw_coverage.agenda_open << "/"
+             << total_landmarks
+             << ", weighted=" << last_fw_coverage.agenda_open_cost
+             << "/" << total_landmark_cost << endl;
+        cout << "Landmark agenda score backward: unweighted="
+             << last_bw_coverage.agenda_open << "/"
+             << total_landmarks
+             << ", weighted=" << last_bw_coverage.agenda_open_cost
+             << "/" << total_landmark_cost << endl;
+        cout << "Landmark agenda meeting score forward: unweighted="
+             << last_fw_coverage.agenda_meeting_open << "/"
+             << total_landmarks
+             << ", weighted=" << last_fw_coverage.agenda_meeting_open_cost
+             << "/" << total_landmark_cost << endl;
+        cout << "Landmark agenda meeting score backward: unweighted="
+             << last_bw_coverage.agenda_meeting_open << "/"
+             << total_landmarks
+             << ", weighted=" << last_bw_coverage.agenda_meeting_open_cost
+             << "/" << total_landmark_cost << endl;
     }
 };
+}
+
+namespace {
+// Domain-specific sound pruning (prototype, env var SLBD_ACYCLIC).
+// States whose `on` relation contains a directed cycle are unreachable in any
+// block-stacking task, yet h^2 mutexes only capture 2-cycles, so >=3 cycles
+// survive into the (regression) backward search and inflate its BDDs. We inject
+// "contains a short on-cycle" as a dead-end set, which the search removes from
+// both frontiers. This is sound and preserves optimal plan cost. No-op on
+// domains without on(x,y) atoms. Cycle length cap via SLBD_ACYCLIC_LEN (>=2).
+void inject_acyclicity_deadends(SymVariables *vars,
+                                SymStateSpaceManager &mgr) {
+    int max_len = 3;
+    if (const char *m = getenv("SLBD_ACYCLIC_LEN")) {
+        max_len = max(2, atoi(m));
+    }
+    const string prefix = "Atom on(";
+    unordered_map<string, unordered_map<string, BDD>> on;
+    set<string> blocks;
+    int on_atoms = 0;
+    for (size_t var = 0; var < g_fact_names.size(); ++var) {
+        for (size_t val = 0; val < g_fact_names[var].size(); ++val) {
+            const string &name = g_fact_names[var][val];
+            if (name.compare(0, prefix.size(), prefix) != 0) {
+                continue;
+            }
+            size_t close = name.find(')', prefix.size());
+            if (close == string::npos) {
+                continue;
+            }
+            string inner = name.substr(prefix.size(), close - prefix.size());
+            size_t comma = inner.find(", ");
+            if (comma == string::npos) {
+                continue;
+            }
+            string a = inner.substr(0, comma);
+            string b = inner.substr(comma + 2);
+            on[a][b] = vars->preBDD(static_cast<int>(var),
+                                    static_cast<int>(val));
+            blocks.insert(a);
+            blocks.insert(b);
+            ++on_atoms;
+        }
+    }
+    if (on.empty()) {
+        cout << "ACYCLIC: no on(x,y) atoms; pruning disabled" << endl;
+        return;
+    }
+    vector<string> bs(blocks.begin(), blocks.end());
+    auto has = [&](const string &x, const string &y) {
+        auto it = on.find(x);
+        return it != on.end() && it->second.count(y) > 0;
+    };
+    BDD deadends = mgr.zeroBDD();
+    long cycle_terms = 0;
+    for (size_t i = 0; i < bs.size(); ++i) {
+        for (size_t j = 0; j < bs.size(); ++j) {
+            if (i == j) {
+                continue;
+            }
+            if (max_len >= 2 && has(bs[i], bs[j]) && has(bs[j], bs[i])) {
+                deadends += on[bs[i]][bs[j]] * on[bs[j]][bs[i]];
+                ++cycle_terms;
+            }
+            if (max_len >= 3) {
+                for (size_t k = 0; k < bs.size(); ++k) {
+                    if (k == i || k == j) {
+                        continue;
+                    }
+                    if (has(bs[i], bs[j]) && has(bs[j], bs[k]) &&
+                        has(bs[k], bs[i])) {
+                        deadends += on[bs[i]][bs[j]] * on[bs[j]][bs[k]] *
+                            on[bs[k]][bs[i]];
+                        ++cycle_terms;
+                    }
+                }
+            }
+        }
+    }
+    mgr.addDeadEndStates(true, deadends);
+    mgr.addDeadEndStates(false, deadends);
+    cout << "ACYCLIC: on_atoms=" << on_atoms << " blocks=" << bs.size()
+         << " max_len=" << max_len << " cycle_terms=" << cycle_terms
+         << " deadend_bdd_nodes=" << deadends.nodeCount() << endl;
+}
 }
 
 namespace symbolic_landmark_search {
@@ -918,8 +1323,13 @@ void SymbolicLandmarkBidirectionalSearch::initialize() {
     mgr = make_shared<OriginalStateSpace>(
         vars.get(), mgrParams, OperatorCostFunction::get_cost_function());
 
+    if (getenv("SLBD_ACYCLIC")) {
+        inject_acyclicity_deadends(vars.get(), *mgr);
+    }
+
     unique_ptr<LandmarkCoverage> landmark_coverage;
-    if (!lm_lazy_landmarks) {
+    if (!lm_lazy_landmarks && lm_guidance_score != SCORE_MEET_BDD &&
+        lm_guidance_score != SCORE_BALANCE_BDD) {
         Exploration exploration(Heuristic::default_options());
         shared_ptr<LandmarkGraph> landmark_graph = lm_factory->compute_lm_graph(exploration);
         landmark_coverage = make_unique<LandmarkCoverage>(
@@ -1044,6 +1454,28 @@ static SearchEngine *_parse_landmark_bidirectional_ucs(OptionParser &parser) {
     guidance_scores_doc.push_back(
         "prefer according to landmarks that are covered by one direction's "
         "scoring scope and by the opposite direction's seen states");
+    guidance_scores.push_back("agenda");
+    guidance_scores_doc.push_back(
+        "prefer according to open ordered landmark agenda count over seen "
+        "states; break ties by open agenda min-cost");
+    guidance_scores.push_back("agenda_weighted");
+    guidance_scores_doc.push_back(
+        "prefer according to open ordered landmark agenda min-cost over seen "
+        "states; break ties by open agenda count");
+    guidance_scores.push_back("agenda_meeting");
+    guidance_scores_doc.push_back(
+        "prefer according to open ordered agenda landmarks already covered "
+        "by the opposite direction's seen states");
+    guidance_scores.push_back("meet_bdd");
+    guidance_scores_doc.push_back(
+        "landmark-free meet-in-the-middle: prefer the direction by the number "
+        "of states shared between its next frontier and the opposite "
+        "direction's reached set (no landmark graph is built)");
+    guidance_scores.push_back("balance_bdd");
+    guidance_scores_doc.push_back(
+        "landmark-free meet-in-the-middle balancing: prefer the direction by "
+        "the number of states in its own reached set, to favour the lagging "
+        "perimeter (no landmark graph is built)");
     parser.add_enum_option(
         "lm_guidance_score",
         guidance_scores,
