@@ -12,14 +12,28 @@ symbolic FD). The **main contribution is a positive, novel result**:
 
 ## TL;DR — the contribution
 
-**Constraint-aware variable ordering** (opt-in env var `SLBD_CONSTRAINT_ORDER`).
-GAMER orders BDD variables only for **causal-graph** proximity, but the
-mutex/constraint BDDs that get conjoined into *every* search step also depend on
-the order — and **no prior work optimizes for that** (verified via literature
-review: GamerPre uses *precondition* co-occurrence; Torralba & Alcázar note the
-mutex-BDD size depends on order but never optimize for it). We add influence
-edges between variables whose facts **co-occur in mutex / invariant groups**,
-then reuse GAMER's local-search optimizer.
+**Constraint-aware variable ordering** (opt-in env var `SLBD_CONSTRAINT_ORDER`,
+or option `sbd(constraint_order=true)`). GAMER orders BDD variables only for
+**causal-graph** proximity, while the mutex/constraint BDDs conjoined into
+*every* search step also depend on the order but are not optimized for. We add
+influence edges between variables whose facts **co-occur in mutex / invariant
+groups** (h² mutexes + exactly-one groups), then reuse GAMER's local-search
+optimizer.
+
+**Novelty (precise claim — verified by literature review).** *To our knowledge,
+the first use in BDD-based symbolic classical planning of h² mutexes and
+exactly-one invariant groups as co-occurrence edges in the GAMER-style static
+variable-ordering objective.* The general idea — order variables sharing
+constraints close together — is **known** in SAT/BDD and constraint compilation
+(**FORCE** [Aloul et al.], **MINCE** [Aloul et al.], configuration-BDD ordering
+[Narodytska & Walsh], OBDD knowledge compilation). So we frame this as a
+**planning-specific adaptation** of constraint-graph ordering, NOT a new general
+BDD-ordering paradigm. It differs from GamerPre (Kissmann & Hoffmann JAIR'14),
+which adds *operator-precondition* co-occurrence edges, and from Torralba &
+Alcázar / cGamer, which use mutexes/invariants for pruning/cBDDs/TRs but hold the
+GAMER order fixed. Key related work to cite: FORCE, MINCE, Kissmann & Hoffmann
+JAIR'14 (GamerPre), Torralba & Alcázar SoCS'13, Torralba AIJ'17. **Avoid** the
+over-broad claim "constraint-aware BDD ordering" (pre-empted by FORCE/MINCE).
 
 Results (vs GAMER baseline, cost-optimal preserved everywhere):
 - **Reliably shrinks the constraint (mutex) BDDs** wherever they exist: −33% to
