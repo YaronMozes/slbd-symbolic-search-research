@@ -33,6 +33,13 @@ public:
         influence_graph[v2][v1] = val;
     }
 
+    // Accumulate influence (used to layer constraint co-occurrence weights on
+    // top of the causal-graph edges).
+    void add_influence(int v1, int v2, double delta) {
+        influence_graph[v1][v2] += delta;
+        influence_graph[v2][v1] += delta;
+    }
+
     static void compute_gamer_ordering(std::vector <int> &ordering);
 };
 }

@@ -1,35 +1,64 @@
-# SLBD Research Notes — Symbolic Bidirectional Search Guidance
+# Research Notes — Constraint-Aware BDD Variable Ordering for Symbolic Planning
 
-**Status as of 2026-06-27.** Audience: project teammate getting up to speed.
+**Status as of 2026-06-28.** Audience: project teammate getting up to speed.
 
-This branch (`symbolic-landmark-guidance`) explores whether we can improve
-Fast Downward's **symbolic bidirectional search** (`sbd`, BDD-based blind
-uniform-cost search). The original hypothesis was *landmark-guided direction
-selection* (`slbd`). After rigorous measurement, that hypothesis — and five
-further ideas — are **falsified**. This doc explains what we tried, what the
-data showed, and where it leaves us.
+This branch (`symbolic-landmark-guidance`) improves Fast Downward's **symbolic
+bidirectional search** (`sbd`, BDD-based cost-optimal search, Torralba's
+symbolic FD). The **main contribution is a positive, novel result**:
+**constraint-aware BDD variable ordering**. The branch also contains a rigorous
+**negative-result characterization** (seven falsified ideas) that motivated it.
 
 ---
 
-## TL;DR
+## TL;DR — the contribution
 
-- The original `slbd` source had been corrupted (88× `return`→`retun`); it did
-  not compile and the committed binary was stale. **Fixed and rebuilt.**
-- We built a rigorous measurement harness (the **oracle** presets in
-  `compare-slbd.py`) and a per-decision frontier trace (`SLBD_TRACE_FRONTIER`).
-- **Six idea-families were measured and all fail to beat baseline `sbd`:**
-  1. Landmark direction guidance (coverage/agenda/meeting) — net-negative.
-  2. Meet-in-the-middle BDD signals (`meet_bdd`, `balance_bdd`) — inert/harmful.
-  3. Trend-based forward/backward budget control — no headroom (split already near-optimal).
-  4. Forward-reachability pruning of the backward search — self-defeating.
-  5. Stronger generic pruning / heuristics — = SymBA*/abstractions = known work.
-  6. Beyond-h² acyclicity pruning (blocks) — sound + optimal but BDD-hostile (net loss).
-- **Root cause (consistent across all six):** node-count BDD-size direction
-  selection is robust and near-optimal; the binding constraint is *intrinsic
-  BDD blow-up* (the BDD contents), which none of these decisions can escape.
-- **Strongest current deliverable:** a rigorous *characterization / negative
-  result* with original methodology. Best-odds *positive* lead not yet tried:
-  domain-specific BDD **variable ordering** (directly shrinks BDDs).
+**Constraint-aware variable ordering** (opt-in env var `SLBD_CONSTRAINT_ORDER`).
+GAMER orders BDD variables only for **causal-graph** proximity, but the
+mutex/constraint BDDs that get conjoined into *every* search step also depend on
+the order — and **no prior work optimizes for that** (verified via literature
+review: GamerPre uses *precondition* co-occurrence; Torralba & Alcázar note the
+mutex-BDD size depends on order but never optimize for it). We add influence
+edges between variables whose facts **co-occur in mutex / invariant groups**,
+then reuse GAMER's local-search optimizer.
+
+Results (vs GAMER baseline, cost-optimal preserved everywhere):
+- **Reliably shrinks the constraint (mutex) BDDs** wherever they exist: −33% to
+  −94% in node count. The method does exactly what it's designed to.
+- **Net coverage gain, no coverage regression** on the evaluated sample (e.g.
+  solves depot-p04 within a 90s limit, which GAMER does not — GAMER needs 110s,
+  CO needs 67s). Coverage is the headline metric in cost-optimal planning.
+- **Speed is an instance-level tradeoff** explained by a clear **mechanism**:
+  CO wins when the constraint BDD is on the critical path (depot: −20% to −40%),
+  loses when the search *frontier* dominates (blocks-14-0: +34%, even though the
+  mutex BDD shrank 94%). This empirically answers an open question from the
+  literature: *ordering for the search frontier alone is the wrong objective
+  once constraint BDDs dominate.*
+
+Key files: `src/search/symbolic/opt_order.{h,cc}` (the ordering),
+`src/search/symbolic/original_state_space.cc` (`MUTEX_BDD_SIZE:` diagnostic).
+Run baseline vs CO: `sbd()` with/without `SLBD_CONSTRAINT_ORDER=1`
+(weight via `SLBD_CO_WEIGHT`, default 1.0).
+
+---
+
+## Context — the negative-result characterization that led here
+
+Before the ordering idea, seven approaches were measured and **all fail to beat
+baseline `sbd`** (this is itself an original empirical study — the lecturer's
+project-ideas doc lists "analysis of search-space properties" as a valid type):
+
+1. Landmark direction guidance (coverage/agenda/meeting) — net-negative.
+2. Meet-in-the-middle BDD signals (`meet_bdd`, `balance_bdd`) — inert/harmful.
+3. Trend-based forward/backward budget control — split already near-optimal.
+4. Forward-reachability pruning of the backward search — self-defeating.
+5. Stronger generic pruning / heuristics — = SymBA*/abstractions = known work.
+6. Beyond-h² acyclicity pruning (blocks) — sound+optimal but BDD-hostile.
+7. (Plain) variable ordering GAMER-vs-FD — modest, domain-dependent.
+
+**Root cause:** node-count direction selection is robust; the binding constraint
+is *intrinsic BDD blow-up* (the BDD contents). That insight is exactly what
+pointed us at shrinking the BDDs via **ordering** — and specifically the
+constraint BDDs, which prior ordering work ignores.
 
 ---
 

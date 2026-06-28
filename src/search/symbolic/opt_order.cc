@@ -1,8 +1,10 @@
 #include "opt_order.h"
 
+#include <cstdlib>
 #include <ostream>
 #include "../globals.h"
 #include "../causal_graph.h"
+#include "../mutex_group.h"
 
 #include "../task_proxy.h"
 #include "../utils/debug_macros.h"
@@ -30,6 +32,37 @@ void InfluenceGraph::compute_gamer_ordering(std::vector <int> &var_order) {
                 ig_partitions.set_influence(v, v2);
             }
         }
+    }
+
+    // Constraint-aware ordering (opt-in, env var SLBD_CONSTRAINT_ORDER): on top
+    // of the causal-graph edges, add influence between variables whose facts
+    // co-occur in a mutex / invariant group. GAMER orders only for causal-graph
+    // proximity, but the mutex/constraint BDDs conjoined during search also
+    // depend on the order (Torralba & Alcazar note this but never optimize for
+    // it). Pulling co-constrained variables together aims to shrink those
+    // constraint BDDs. Weight via SLBD_CO_WEIGHT (default 1.0).
+    if (getenv("SLBD_CONSTRAINT_ORDER")) {
+        double w = 1.0;
+        if (const char *ws = getenv("SLBD_CO_WEIGHT")) {
+            w = atof(ws);
+        }
+        long edges = 0;
+        for (const MutexGroup &mg : g_mutex_groups) {
+            const vector<FactPair> &facts = mg.getFacts();
+            for (size_t i = 0; i < facts.size(); ++i) {
+                for (size_t j = i + 1; j < facts.size(); ++j) {
+                    int a = facts[i].var;
+                    int b = facts[j].var;
+                    if (a != b) {
+                        ig_partitions.add_influence(a, b, w);
+                        ++edges;
+                    }
+                }
+            }
+        }
+        cout << "CONSTRAINT_ORDER: mutex_groups=" << g_mutex_groups.size()
+             << " co_occurrence_edges_added=" << edges
+             << " weight=" << w << endl;
     }
 
     ig_partitions.get_ordering(var_order);

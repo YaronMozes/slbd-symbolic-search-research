@@ -56,6 +56,20 @@ void OriginalStateSpace::init_mutex(const std::vector<MutexGroup> &mutex_groups)
     init_mutex(mutex_groups, genMutexBDD, genMutexBDDByFluent, false);
     init_mutex(mutex_groups, genMutexBDD, genMutexBDDByFluent, true);
 
+    // Diagnostic: total size of the constraint (mutex) BDDs that are conjoined
+    // into every search step. Used to measure whether constraint-aware variable
+    // ordering shrinks them.
+    long fw_nodes = 0, bw_nodes = 0;
+    for (const BDD &b : notMutexBDDsFw) {
+        fw_nodes += b.nodeCount();
+    }
+    for (const BDD &b : notMutexBDDsBw) {
+        bw_nodes += b.nodeCount();
+    }
+    cout << "MUTEX_BDD_SIZE: fw_constraints=" << notMutexBDDsFw.size()
+         << " bw_constraints=" << notMutexBDDsBw.size()
+         << " fw_nodes=" << fw_nodes << " bw_nodes=" << bw_nodes
+         << " total_nodes=" << (fw_nodes + bw_nodes) << endl;
 }
 void OriginalStateSpace::init_mutex(const std::vector<MutexGroup> &mutex_groups,
                                       bool genMutexBDD, bool genMutexBDDByFluent, bool fw) {

@@ -12,6 +12,7 @@
 #include "../symbolic/original_state_space.h"
 #include "../symbolic/sym_params_search.h"
 #include "../symbolic/sym_state_space_manager.h"
+#include "../symbolic/sym_util.h"
 #include "../symbolic/sym_variables.h"
 #include "../symbolic/uniform_cost_search.h"
 
@@ -1283,37 +1284,45 @@ void inject_acyclicity_deadends(SymVariables *vars,
         auto it = on.find(x);
         return it != on.end() && it->second.count(y) > 0;
     };
-    BDD deadends = mgr.zeroBDD();
+    // Build a CONJUNCTIVE constraint set: one compact !(cycle) BDD per directed
+    // 3-cycle (h^2 already forbids 2-cycles). Applying the conjunction of
+    // ~cycle constraints stays compact (like the mutex BDDs); building the
+    // union of cycle-STATES does not, which is why the earlier monolithic OR
+    // blew up to millions of nodes. Each triple i<j<k yields its two directed
+    // cycles. >3-cycles are not enumerated (cost grows as N^len).
+    vector<BDD> constraints;
     long cycle_terms = 0;
+    auto add_cycle = [&](const string &a, const string &b, const string &c) {
+        if (has(a, b) && has(b, c) && has(c, a)) {
+            constraints.push_back(!(on[a][b] * on[b][c] * on[c][a]));
+            ++cycle_terms;
+        }
+    };
     for (size_t i = 0; i < bs.size(); ++i) {
-        for (size_t j = 0; j < bs.size(); ++j) {
-            if (i == j) {
-                continue;
-            }
-            if (max_len >= 2 && has(bs[i], bs[j]) && has(bs[j], bs[i])) {
-                deadends += on[bs[i]][bs[j]] * on[bs[j]][bs[i]];
-                ++cycle_terms;
-            }
-            if (max_len >= 3) {
-                for (size_t k = 0; k < bs.size(); ++k) {
-                    if (k == i || k == j) {
-                        continue;
-                    }
-                    if (has(bs[i], bs[j]) && has(bs[j], bs[k]) &&
-                        has(bs[k], bs[i])) {
-                        deadends += on[bs[i]][bs[j]] * on[bs[j]][bs[k]] *
-                            on[bs[k]][bs[i]];
-                        ++cycle_terms;
-                    }
-                }
+        for (size_t j = i + 1; j < bs.size(); ++j) {
+            for (size_t k = j + 1; k < bs.size(); ++k) {
+                add_cycle(bs[i], bs[j], bs[k]);
+                add_cycle(bs[i], bs[k], bs[j]);
             }
         }
     }
-    mgr.addDeadEndStates(true, deadends);
-    mgr.addDeadEndStates(false, deadends);
+    if (constraints.empty()) {
+        cout << "ACYCLIC: no 3-cycles found; pruning disabled" << endl;
+        return;
+    }
+    // Merge into a few balanced, size-capped constraint BDDs (same mechanism
+    // the planner uses for mutexes), then inject for both directions.
+    merge(vars, constraints, mergeAndBDD, 60000, 100000);
+    long total_nodes = 0;
+    for (BDD &c : constraints) {
+        mgr.addDeadEndStates(true, !c);
+        mgr.addDeadEndStates(false, !c);
+        total_nodes += c.nodeCount();
+    }
     cout << "ACYCLIC: on_atoms=" << on_atoms << " blocks=" << bs.size()
          << " max_len=" << max_len << " cycle_terms=" << cycle_terms
-         << " deadend_bdd_nodes=" << deadends.nodeCount() << endl;
+         << " merged_constraints=" << constraints.size()
+         << " total_constraint_nodes=" << total_nodes << endl;
 }
 }
 
