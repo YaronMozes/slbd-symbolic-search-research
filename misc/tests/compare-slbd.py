@@ -29,6 +29,10 @@ _ORACLE_OPEN = (
     "lm_guidance_start_decision=1,lm_eval_frequency=1")
 
 CONFIG_PRESETS = {
+    "co-order": [
+        ("sbd", "sbd()"),
+        ("sbd-constraint-order", "sbd(constraint_order=true)"),
+    ],
     "oracle-meet": [
         ("sbd", "sbd()"),
         ("meet-follow",
@@ -225,7 +229,7 @@ def parse_args():
         "--config-preset",
         choices=[
             "smoke", "tuning", "confirm", "frontier", "ordered", "agenda",
-            "oracle", "oracle-meet"],
+            "oracle", "oracle-meet", "co-order"],
         default="smoke",
         help="configuration set to run")
     parser.add_argument(

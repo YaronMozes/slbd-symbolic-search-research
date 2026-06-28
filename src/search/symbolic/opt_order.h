@@ -40,7 +40,9 @@ public:
         influence_graph[v2][v1] += delta;
     }
 
-    static void compute_gamer_ordering(std::vector <int> &ordering);
+    static void compute_gamer_ordering(std::vector <int> &ordering,
+                                       bool constraint_aware = false,
+                                       double co_weight = 1.0);
 };
 }
 

@@ -14,7 +14,9 @@ using namespace std;
 namespace symbolic {
 //Returns a optimized variable ordering that reorders the variables
 //according to the standard causal graph criterion
-void InfluenceGraph::compute_gamer_ordering(std::vector <int> &var_order) {
+void InfluenceGraph::compute_gamer_ordering(std::vector <int> &var_order,
+                                            bool constraint_aware,
+                                            double co_weight) {
     TaskProxy task_proxy(*(g_root_task()));
 
     const CausalGraph &cg = task_proxy.get_causal_graph();
@@ -41,8 +43,8 @@ void InfluenceGraph::compute_gamer_ordering(std::vector <int> &var_order) {
     // depend on the order (Torralba & Alcazar note this but never optimize for
     // it). Pulling co-constrained variables together aims to shrink those
     // constraint BDDs. Weight via SLBD_CO_WEIGHT (default 1.0).
-    if (getenv("SLBD_CONSTRAINT_ORDER")) {
-        double w = 1.0;
+    if (constraint_aware || getenv("SLBD_CONSTRAINT_ORDER")) {
+        double w = co_weight;
         if (const char *ws = getenv("SLBD_CO_WEIGHT")) {
             w = atof(ws);
         }

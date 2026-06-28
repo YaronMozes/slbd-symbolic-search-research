@@ -41,6 +41,8 @@ class SymVariables {
     const long cudd_init_cache_size; //Initial cache size
     const long cudd_init_available_memory; //Maximum available memory (bytes)
     const bool gamer_ordering;
+    const bool constraint_order; //Constraint-aware variable ordering
+    const double co_weight; //Weight of mutex/invariant co-occurrence edges
 
     std::unique_ptr<Cudd> _manager; //_manager associated with this symbolic search
 
