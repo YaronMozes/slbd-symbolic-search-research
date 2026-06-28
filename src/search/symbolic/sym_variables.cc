@@ -23,14 +23,15 @@ SymVariables::SymVariables(const Options &opts) :
     cudd_init_available_memory(opts.get<long>("cudd_init_available_memory")),
     gamer_ordering(opts.get<bool>("gamer_ordering")),
     constraint_order(opts.get<bool>("constraint_order")),
-    co_weight(opts.get<double>("co_weight")) {
+    co_weight(opts.get<double>("co_weight")),
+    constraint_only(opts.get<bool>("constraint_only")) {
 }
 
 void SymVariables::init() {
     vector <int> var_order;
     if (gamer_ordering) {
         InfluenceGraph::compute_gamer_ordering(var_order, constraint_order,
-                                               co_weight);
+                                               co_weight, constraint_only);
     } else {
         for (size_t i = 0; i < g_variable_domain.size(); ++i) {
             var_order.push_back(i);
@@ -351,5 +352,10 @@ void SymVariables::add_options_to_parser(options::OptionParser &parser) {
     parser.add_option<double> ("co_weight",
                                "Weight of mutex/invariant co-occurrence edges "
                                "for constraint_order", "1.0");
+    parser.add_option<bool> ("constraint_only",
+                             "Ablation: order using ONLY mutex/invariant "
+                             "co-occurrence edges, dropping causal-graph edges "
+                             "(FORCE/MINCE-style constraint-only ordering)",
+                             "false");
 }
 }

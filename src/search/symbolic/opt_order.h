@@ -42,7 +42,8 @@ public:
 
     static void compute_gamer_ordering(std::vector <int> &ordering,
                                        bool constraint_aware = false,
-                                       double co_weight = 1.0);
+                                       double co_weight = 1.0,
+                                       bool constraint_only = false);
 };
 }
 

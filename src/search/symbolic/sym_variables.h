@@ -43,6 +43,7 @@ class SymVariables {
     const bool gamer_ordering;
     const bool constraint_order; //Constraint-aware variable ordering
     const double co_weight; //Weight of mutex/invariant co-occurrence edges
+    const bool constraint_only; //Ablation: drop causal edges, mutex edges only
 
     std::unique_ptr<Cudd> _manager; //_manager associated with this symbolic search
 

@@ -17,7 +17,8 @@ namespace symbolic {
 //according to the standard causal graph criterion
 void InfluenceGraph::compute_gamer_ordering(std::vector <int> &var_order,
                                             bool constraint_aware,
-                                            double co_weight) {
+                                            double co_weight,
+                                            bool constraint_only_opt) {
     TaskProxy task_proxy(*(g_root_task()));
 
     const CausalGraph &cg = task_proxy.get_causal_graph();
@@ -29,10 +30,17 @@ void InfluenceGraph::compute_gamer_ordering(std::vector <int> &var_order,
     }
 
     InfluenceGraph ig_partitions(g_variable_domain.size());
-    for (size_t v = 0; v < g_variable_domain.size(); v++) {
-        for (int v2 : cg.get_successors(v)) {
-            if ((int)v != v2) {
-                ig_partitions.set_influence(v, v2);
+    // Ablation (env var SLBD_CO_ONLY): drop the causal-graph edges entirely and
+    // order using ONLY the mutex/invariant co-occurrence edges below — a
+    // FORCE/MINCE-spirit constraint-only ordering. Used to show that the
+    // causal+constraint COMBINATION beats either signal alone.
+    bool constraint_only = constraint_only_opt || getenv("SLBD_CO_ONLY");
+    if (!constraint_only) {
+        for (size_t v = 0; v < g_variable_domain.size(); v++) {
+            for (int v2 : cg.get_successors(v)) {
+                if ((int)v != v2) {
+                    ig_partitions.set_influence(v, v2);
+                }
             }
         }
     }
@@ -44,7 +52,7 @@ void InfluenceGraph::compute_gamer_ordering(std::vector <int> &var_order,
     // depend on the order (Torralba & Alcazar note this but never optimize for
     // it). Pulling co-constrained variables together aims to shrink those
     // constraint BDDs. Weight via SLBD_CO_WEIGHT (default 1.0).
-    if (constraint_aware || getenv("SLBD_CONSTRAINT_ORDER")) {
+    if (constraint_aware || constraint_only || getenv("SLBD_CONSTRAINT_ORDER")) {
         double w = co_weight;
         if (const char *ws = getenv("SLBD_CO_WEIGHT")) {
             w = atof(ws);

@@ -33,6 +33,11 @@ CONFIG_PRESETS = {
         ("sbd", "sbd()"),
         ("sbd-constraint-order", "sbd(constraint_order=true)"),
     ],
+    "co-ablation": [
+        ("causal", "sbd()"),
+        ("constraint-only", "sbd(constraint_order=true,constraint_only=true)"),
+        ("combined", "sbd(constraint_order=true)"),
+    ],
     "oracle-meet": [
         ("sbd", "sbd()"),
         ("meet-follow",
@@ -229,7 +234,7 @@ def parse_args():
         "--config-preset",
         choices=[
             "smoke", "tuning", "confirm", "frontier", "ordered", "agenda",
-            "oracle", "oracle-meet", "co-order"],
+            "oracle", "oracle-meet", "co-order", "co-ablation"],
         default="smoke",
         help="configuration set to run")
     parser.add_argument(
