@@ -86,6 +86,39 @@ Reproduce: `compare-slbd.py --config-preset co-order ...`.
 coverage regression, ~11% speedups on constraint-heavy domains, with a
 characterized regression on stacking domains.
 
+### Three ordering signals (the main study)
+
+We compare three orderings using the *same* GAMER optimizer, differing only in
+edges — run via `compare-slbd.py --config-preset co-ablation`, or the parallel
+`parallel-bench.py` (each task in its own temp dir + `--overall-memory-limit`;
+needed because the binary is single-threaded and the harness is sequential):
+
+1. **causal** = GAMER (causal-graph edges) — baseline.
+2. **constraint-only** = mutex/invariant co-occurrence edges *only*, no causal
+   (a FORCE/MINCE-style constraint-graph ordering; `constraint_only=true`).
+3. **combined** = causal + constraint (our CO; `constraint_order=true`).
+
+12 domains, 96 tasks, 90s, 3 GB/run; big effects re-validated at low contention
+(`slbd-results/co-ablation-parallel.csv`, `co-ablation-clean.csv`). Cost
+preserved throughout. Coverage /96: causal 90, constraint-only 88, **combined 91**.
+
+- **No single ordering wins everywhere.** Per-domain geomean vs GAMER:
+  constraint-only is **high-variance** — **pipesworld 0.52 (−48%)**,
+  **scanalyzer 0.72 (−28%)**, but **satellite 3.58** and loses 2 coverage.
+  combined is the **robust default** — +1 coverage, tpp 0.89, pipesworld 0.91,
+  mostly neutral, only blocks slower (1.27).
+- **The blocks regression is from *combining*, not the constraint signal** —
+  on blocks-14-0, constraint-only (14.1s) beats GAMER (17.5s); combined (23.9s)
+  is worst.
+- **Per-domain ORACLE (best of the three) strictly dominates GAMER** — never
+  slower, up to −48% (pipesworld), −28% (scanalyzer), −11% (tpp). Per-domain
+  selection is feasible (vs the per-instance selector, which is future work).
+
+**Reframed contribution:** not just "constraint-aware ordering" but a study of
+how **causal (GAMER) and constraint (FORCE-style) ordering signals interact** in
+symbolic planning — complementary, sometimes synergistic (depot/tpp), sometimes
+antagonistic (blocks) — such that *selecting* among them beats the GAMER default.
+
 ---
 
 ## Context — the negative-result characterization that led here
