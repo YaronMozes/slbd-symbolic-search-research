@@ -35,9 +35,42 @@ Results (vs GAMER baseline, cost-optimal preserved everywhere):
   once constraint BDDs dominate.*
 
 Key files: `src/search/symbolic/opt_order.{h,cc}` (the ordering),
-`src/search/symbolic/original_state_space.cc` (`MUTEX_BDD_SIZE:` diagnostic).
-Run baseline vs CO: `sbd()` with/without `SLBD_CONSTRAINT_ORDER=1`
-(weight via `SLBD_CO_WEIGHT`, default 1.0).
+`src/search/symbolic/sym_variables.cc` (the option), `original_state_space.cc`
+(`MUTEX_BDD_SIZE:` diagnostic). Run baseline vs CO:
+`sbd()` vs `sbd(constraint_order=true)` (weight via `co_weight`, default 1.0).
+Reproduce: `compare-slbd.py --config-preset co-order ...`.
+
+---
+
+## Evaluation (systematic benchmark)
+
+14 domains × 8 instances, `sbd()` vs `sbd(constraint_order=true)`, 90s timeout
+(`slbd-results/co-order-big.txt`); key domains re-validated with 3 repeats
+(`slbd-results/co-validate.txt`). All deterministic (RNG fixed seed 2011).
+
+- **Coverage: 100/112 → 101/112** (+1, **no coverage regression** across 14
+  domains); the gain is depot-p04 (CO solves at ~67s, GAMER needs ~110s, so CO
+  wins at any limit in [67s,110s]). **Cost mismatches: none.**
+- **Per-domain search-time ratio vs GAMER (<1 = CO faster), 3-repeat geomean:**
+  - **tpp 0.89 (−11%)**, **pipesworld 0.89 (−11%)**, **zenotravel 0.96 (−4%)**,
+    driverlog 0.97, gripper 0.98 — wins on constraint-heavy transport domains.
+  - depot ~1.00 on common-solved (p03 −26% offset by p07 +55%) **but +1 coverage**.
+  - **blocks 2.05 (+105%)** — regression (frontier-dominated, see Mechanism).
+  - logistics/miconic have **zero** cross-variable mutex BDDs → CO is a no-op
+    (small ratios there are timing noise; noise floor ≈ ±12% on sub-second tasks).
+- **Mechanism** (`MUTEX_BDD_SIZE`): CO reliably shrinks the constraint BDD where
+  it exists (−33% depot, −94% blocks). It *wins* when that BDD is on the critical
+  path (transport domains), *loses* when the frontier dominates (blocks): the
+  ordering good for the constraint BDD is bad for the frontier.
+- **Negative finding (Option B, `SLBD_CO_SKIP_CAUSAL`):** skipping
+  causal-neighbour co-occurrence edges keeps the wins but does **not** fix blocks
+  — blocks skips only ~13% of edges, so its harmful edges are causally *distant*;
+  the regression is a genuine constraint-vs-frontier conflict, not redundant
+  edges. A per-instance selector (probe/portfolio) is left as future work.
+
+**Honest headline:** novel, optimal-preserving, net coverage gain with no
+coverage regression, ~11% speedups on constraint-heavy domains, with a
+characterized regression on stacking domains.
 
 ---
 

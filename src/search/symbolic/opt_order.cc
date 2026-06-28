@@ -1,5 +1,6 @@
 #include "opt_order.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <ostream>
 #include "../globals.h"
@@ -48,22 +49,42 @@ void InfluenceGraph::compute_gamer_ordering(std::vector <int> &var_order,
         if (const char *ws = getenv("SLBD_CO_WEIGHT")) {
             w = atof(ws);
         }
-        long edges = 0;
+        // Experimental (env var SLBD_CO_SKIP_CAUSAL): only add co-occurrence
+        // edges between variables that are NOT already causal neighbours. In
+        // dense-causal-graph domains (e.g. blocks: any block can stack on any
+        // other) almost every mutex edge duplicates a causal edge, over-
+        // tightening the order and hurting the frontier; skipping those should
+        // remove the regression while keeping the useful long-range edges that
+        // help sparse-causal domains (e.g. depot).
+        bool skip_causal = getenv("SLBD_CO_SKIP_CAUSAL") != nullptr;
+        long edges = 0, skipped = 0;
         for (const MutexGroup &mg : g_mutex_groups) {
             const vector<FactPair> &facts = mg.getFacts();
             for (size_t i = 0; i < facts.size(); ++i) {
                 for (size_t j = i + 1; j < facts.size(); ++j) {
                     int a = facts[i].var;
                     int b = facts[j].var;
-                    if (a != b) {
-                        ig_partitions.add_influence(a, b, w);
-                        ++edges;
+                    if (a == b) {
+                        continue;
                     }
+                    if (skip_causal) {
+                        const vector<int> &sa = cg.get_successors(a);
+                        const vector<int> &sb = cg.get_successors(b);
+                        if (find(sa.begin(), sa.end(), b) != sa.end() ||
+                            find(sb.begin(), sb.end(), a) != sb.end()) {
+                            ++skipped;
+                            continue;
+                        }
+                    }
+                    ig_partitions.add_influence(a, b, w);
+                    ++edges;
                 }
             }
         }
         cout << "CONSTRAINT_ORDER: mutex_groups=" << g_mutex_groups.size()
              << " co_occurrence_edges_added=" << edges
+             << " skipped_causal=" << skipped
+             << " skip_causal_mode=" << (skip_causal ? 1 : 0)
              << " weight=" << w << endl;
     }
 
