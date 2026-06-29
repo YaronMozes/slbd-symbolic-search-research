@@ -141,6 +141,29 @@ on satellite (correctly avoiding constraint-only's 3.6× slowdown there)**.
   work on fast-instance wins, and an in-engine probe-and-continue is a
   two-Cudd-manager refactor.
 
+### Broadened evaluation + why prediction is hard (18 domains)
+
+`slbd-results/co-ablation-broad.csv` (18 domains × 12, parallel-bench.py):
+coverage causal **161**, constraint-only 160, **combined 164** (+3). On the 156
+instances all three solve, **each ordering is the per-instance best ~⅓ of the
+time** (causal 52, constraint-only 53, combined 51) and the **per-instance
+oracle is 0.861 (−14% vs GAMER)** — selection is well justified.
+
+We tried to build an **intelligent feature-based selector** (predict the fastest
+ordering from setup-time features: co-occurrence-edge density, mutex-BDD size /
+reduction). **It fails:** no rule beat GAMER ("co-edges/var<5→constraint-only"
+gave 1.29; "mutex-reduction<0.3→constraint-only" gave 1.00). The relative speed
+of the orderings is governed by **search dynamics, not static structure**
+(scanalyzer wins at edges/var≈14 while depot loses at ≈15; blocks always loses,
+sokoban usually wins). **Finding:** static selection-prediction is insufficient
+here — one must observe behaviour, which is what the portfolio does implicitly.
+
+**Why the portfolio is the right realization (not a fallback):** symbolic search
+is single-threaded, so on a many-core machine the portfolio's ~3× CPU costs
+**zero extra wall-clock** (idle cores). A CPU-frugal probe-based selector matters
+only when cores are scarce; since static features can't predict the winner, it
+needs an in-engine probe — well-scoped future work.
+
 ---
 
 ## Context — the negative-result characterization that led here
