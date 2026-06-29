@@ -119,6 +119,28 @@ how **causal (GAMER) and constraint (FORCE-style) ordering signals interact** in
 symbolic planning — complementary, sometimes synergistic (depot/tpp), sometimes
 antagonistic (blocks) — such that *selecting* among them beats the GAMER default.
 
+### Realizing the oracle: a parallel ordering portfolio
+
+`misc/tests/portfolio.py` runs the three orderings **concurrently** (each in its
+own temp dir + memory limit) and returns the **first** solution → wall-clock =
+the **per-instance** oracle over orderings. Symbolic search is single-threaded,
+so this just uses otherwise-idle cores. It is **never slower than GAMER** (causal
+is a component) and picks the right ordering per instance — verified:
+constraint-only on pipes/scanalyzer/blocks, combined on depot/tpp, and **causal
+on satellite (correctly avoiding constraint-only's 3.6× slowdown there)**.
+
+- **Per-instance > per-domain:** on blocks-14-0 the portfolio picks
+  constraint-only and beats GAMER (14.1s vs 17.5s *search*), even though the
+  blocks *domain* average favours causal.
+- **Honest metric:** report **search time** (clean). Portfolio total-wall-clock
+  measurements are confounded by OS cache/driver-startup warming (GAMER run cold,
+  portfolio warm), so the algorithmic claim rests on the search-time oracle, not
+  raw wall-clock. Cost: 3× CPU for oracle wall-clock.
+- The *intelligent* per-instance selector (predict the best ordering cheaply,
+  without running all three) remains future work: a driver-level probe wastes
+  work on fast-instance wins, and an in-engine probe-and-continue is a
+  two-Cudd-manager refactor.
+
 ---
 
 ## Context — the negative-result characterization that led here
