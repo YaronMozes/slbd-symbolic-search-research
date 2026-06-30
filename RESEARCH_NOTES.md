@@ -43,10 +43,14 @@ over-broad claim "constraint-aware BDD ordering" (pre-empted by FORCE/MINCE).
 >   coverage on woodworking, gains on depot/sokoban. constraint-only is net −6
 >   (worse). So **there is no clean coverage improvement at scale.**
 > - **Cost-optimal preserved (0 cost mismatches).**
-> - **What survives:** large *domain-specific speedups* (constraint-only −48%
->   pipesworld, −28% scanalyzer) and a faster per-instance *oracle*, realized by
->   the portfolio (never worse in wall-clock, 3× CPU). No single 1× ordering
->   beats GAMER; static selection-prediction fails.
+> - **What survives (clean low-contention speed, 184 commonly-solved,
+>   `co-clean-final.csv`):** overall geomean vs GAMER — constraint-only **1.19**
+>   (worse), combined **1.02** (~neutral), **oracle 0.84 (−16%, never worse in
+>   any domain)**. Big domain-specific swings for constraint-only (pipesworld
+>   0.58, scanalyzer 0.70; but rovers 3.93, satellite 3.46).
+> - **The only configuration that beats GAMER is the per-instance oracle (−16%),
+>   realized by the portfolio (3× CPU) or a selector (which fails).** No single
+>   1× ordering beats GAMER.
 
 Results (vs GAMER baseline, cost-optimal preserved everywhere):
 - **Reliably shrinks the constraint (mutex) BDDs** wherever they exist: −33% to
