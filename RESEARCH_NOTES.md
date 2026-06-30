@@ -35,12 +35,25 @@ GAMER order fixed. Key related work to cite: FORCE, MINCE, Kissmann & Hoffmann
 JAIR'14 (GamerPre), Torralba & Alcázar SoCS'13, Torralba AIJ'17. **Avoid** the
 over-broad claim "constraint-aware BDD ordering" (pre-empted by FORCE/MINCE).
 
+> **AUTHORITATIVE RESULT (551 instances, 18 domains, all-instances, 300s — see
+> `slbd-results/co-coverage.csv`). This supersedes the smaller-sample numbers
+> below, which were optimistic artifacts of first-8-instances/90s runs.**
+> - **Coverage is essentially NEUTRAL.** At 90s/180s combined ties GAMER exactly
+>   (297/307); at 300s combined is +1 (315 vs 314) but **NOT strict** — it loses
+>   coverage on woodworking, gains on depot/sokoban. constraint-only is net −6
+>   (worse). So **there is no clean coverage improvement at scale.**
+> - **Cost-optimal preserved (0 cost mismatches).**
+> - **What survives:** large *domain-specific speedups* (constraint-only −48%
+>   pipesworld, −28% scanalyzer) and a faster per-instance *oracle*, realized by
+>   the portfolio (never worse in wall-clock, 3× CPU). No single 1× ordering
+>   beats GAMER; static selection-prediction fails.
+
 Results (vs GAMER baseline, cost-optimal preserved everywhere):
 - **Reliably shrinks the constraint (mutex) BDDs** wherever they exist: −33% to
   −94% in node count. The method does exactly what it's designed to.
-- **Net coverage gain, no coverage regression** on the evaluated sample (e.g.
-  solves depot-p04 within a 90s limit, which GAMER does not — GAMER needs 110s,
-  CO needs 67s). Coverage is the headline metric in cost-optimal planning.
+- ~~Net coverage gain, no coverage regression~~ — **REFUTED at scale (see box
+  above): coverage is ~neutral and `combined` is not strictly ≥ GAMER.** (The
+  depot-p04 anecdote — GAMER 110s vs combined 67s — is real but domain-specific.)
 - **Speed is an instance-level tradeoff** explained by a clear **mechanism**:
   CO wins when the constraint BDD is on the critical path (depot: −20% to −40%),
   loses when the search *frontier* dominates (blocks-14-0: +34%, even though the
