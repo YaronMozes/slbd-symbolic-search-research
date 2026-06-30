@@ -1,131 +1,241 @@
-# Constraint-Aware Variable Ordering for Symbolic Optimal Planning
+# From Landmark Guidance to Constraint-Aware Variable Ordering in Symbolic Optimal Planning
 
 **Course project — AI and Autonomous Systems (09608).** Draft report.
 Authors: Yaron Mozes, Galit K.
 
 > Status: working draft built from the experiments in this repo
-> (`RESEARCH_NOTES.md`, `slbd-results/`). Numbers are from a laptop-scale,
-> non-IPC protocol — stated explicitly in §6. Prose to be polished.
+> (`RESEARCH_NOTES.md`, `slbd-results/`). All numbers are from a laptop-scale,
+> non-IPC protocol — stated explicitly in §8. Prose to be polished; citations to
+> be formatted.
 
 ---
 
 ## Abstract
 
 Symbolic (BDD-based) search is a leading approach to cost-optimal classical
-planning, and its performance is dominated by **BDD size**, which in turn is
-governed by the **variable ordering**. The state-of-the-art GAMER ordering
-chooses this order from the **causal graph**. We observe that these planners
-*also* conjoin **constraint BDDs** (h² mutexes and exactly-one invariant groups)
-into the search at every step, and that the size of those constraint BDDs also
-depends on the order — yet the ordering objective ignores them. Inspired by
-constraint-graph variable ordering from SAT/BDD model checking (FORCE, MINCE)
-and by per-instance algorithm selection (SATzilla), we add **mutex/invariant
-co-occurrence edges** to GAMER's ordering objective, producing two new orderings
-(*constraint-only* and *combined*). On 18 IPC optimal-STRIPS domains we find that
-the three orderings are **strongly complementary** — each is the per-instance
-best on roughly one third of instances — and that a **per-instance oracle is
-~16% faster than GAMER while never slower in any domain**. However, **no single
-ordering beats GAMER on its own** (combined is ~neutral, constraint-only is worse
-on average but spectacular on specific domains, e.g. −42% on pipesworld), and
-**coverage is essentially neutral**. We realize the oracle with a simple parallel
-**portfolio** (exploiting the idle cores a single-threaded symbolic search
-leaves), and show that **static per-instance selection of the ordering fails**.
-All orderings preserve cost-optimality.
+planning; its performance is dominated by **BDD size**. This project has two
+parts. **First**, we investigated our original hypothesis — that **landmarks can
+guide the direction choice** in symbolic *bidirectional* search — and, with a
+purpose-built "oracle" test protocol, found a clean **negative result**: landmark
+direction guidance does not help, because the baseline node-count rule is already
+near-optimal and landmark goal-progress is *orthogonal* to BDD size. We then
+systematically eliminated several related direction/schedule/pruning ideas, all
+for the same root cause: **the binding constraint is intrinsic BDD size (the BDD
+*contents*), not which side you expand.** **Second**, that insight led us to
+**variable ordering** — the main lever on BDD size. We observe that symbolic
+planners conjoin *constraint BDDs* (h² mutexes, exactly-one invariant groups)
+into search at every step, and that their size depends on the order, yet the
+GAMER ordering objective ignores them. Inspired by constraint-graph ordering in
+SAT (FORCE/MINCE) and portfolio selection (SATzilla), we add **mutex/invariant
+co-occurrence edges** to the ordering objective. On 18 IPC optimal-STRIPS domains
+the resulting orderings are **strongly complementary** — a per-instance oracle is
+**~16% faster than GAMER and never slower in any domain** — but **no single
+ordering beats GAMER** (coverage is neutral; combined ≈ neutral; constraint-only
+is worse on average yet spectacular on specific domains, e.g. −42% on
+pipesworld). We realize the oracle with a parallel **portfolio** at 3× CPU, and
+show that **cheap static selection of the ordering fails.** All orderings
+preserve cost-optimality.
 
 ---
 
 ## 1. Introduction
 
 Cost-optimal classical planning asks for a provably cheapest plan. **Symbolic
-search** tackles it by representing large sets of states as Binary Decision
-Diagrams (BDDs) and exploring them with set operations rather than state-by-state
-(Edelkamp & Kissmann's GAMER; Torralba's symbolic Fast Downward). The dominant
-cost factor is the **size of the BDDs**, which can vary by orders of magnitude
-with the **variable ordering** — the linear order of the state variables inside
-the BDD.
+search** represents large sets of states as Binary Decision Diagrams (BDDs) and
+explores them with set operations (Edelkamp & Kissmann's GAMER; Torralba's
+symbolic Fast Downward). The dominant cost factor is **BDD size**.
 
-GAMER computes this order from the **causal graph**: variables that influence one
-another through actions are placed close together. Separately, these planners
-exploit **state constraints** — binary (h²) mutexes and exactly-one invariant
-groups — by conjoining *constraint BDDs* into the search frontiers to prune
-unreachable/spurious states (Torralba & Alcázar). Those constraint BDDs are
-applied at *every* step, and their size also depends on the variable order — but
-the ordering objective is computed *only* from the causal graph and never
-optimizes for the constraints it later conjoins.
+This project began with a different idea than where it ended. We set out to
+improve **symbolic *bidirectional* search** — which expands a forward frontier
+(from the initial state) and a backward frontier (from the goal) and stops when
+they meet — by using **landmarks** to make a smarter choice of *which frontier to
+expand next*. After building this and testing it rigorously, we found it does not
+work, and we found *why*. The reason — that the real bottleneck is BDD size, not
+the search schedule — pointed us at **variable ordering**, where our positive (if
+incremental) contribution lies.
 
-**This paper asks:** is the *constraint structure* a useful variable-ordering
-signal in symbolic planning, and if so, when does it help? We answer empirically.
+We present both parts, because the negative result is itself a contribution (it
+is, to our knowledge, the first study of landmark-guided direction selection for
+symbolic search) and because it motivates the second part.
 
 ---
 
 ## 2. Background
 
 - **Symbolic bidirectional uniform-cost search (`sbd`).** Blind, cost-optimal,
-  BDD-based forward+backward search. Baseline planner: Torralba's symbolic Fast
-  Downward.
+  BDD-based forward + backward search. At each step it must choose a **direction**
+  (which frontier to expand); the baseline rule picks the side whose next BDD
+  image is estimated smaller (**node-count**). Baseline planner: Torralba's
+  symbolic Fast Downward.
+- **Landmarks.** Facts (or actions) that must hold (or occur) at some point on
+  *every* plan. Central to modern heuristic search (LAMA, LM-cut), but rarely used
+  inside BDD-based symbolic search.
 - **GAMER variable ordering.** Build an "influence graph" over SAS⁺ variables
   with edges from causal-graph dependencies; minimize a linear-arrangement
   objective by randomized local search so dependent variables sit close.
 - **Constraint BDDs.** h² mutexes + exactly-one invariant groups, conjoined into
-  the frontiers to remove spurious states (Torralba & Alcázar, *Constrained
+  the frontiers to prune spurious states (Torralba & Alcázar, *Constrained
   Symbolic Search*, SoCS 2013).
 
 ---
 
-## 3. Related work and the precise novelty claim
+## 3. Part I — Landmark-guided direction selection, and why it failed
+
+### 3.1 The hypothesis and what we built
+
+In bidirectional symbolic search the per-step choice of *direction* (expand
+forward or backward) affects how the two frontiers grow and meet. The baseline
+picks the cheaper-looking side by node-count. We hypothesized that **landmarks**
+— which signal progress toward the goal — could choose a *better* direction.
+
+We implemented a new search engine, `slbd`
+(`src/search/search_engines/symbolic_landmark_search.cc`, ~1,300 lines), that:
+- computes landmarks with Fast Downward's landmark factories and indexes each as
+  a BDD;
+- at each direction decision, scores the two frontiers by their landmark status,
+  with a **family of scoring functions** (coverage, weighted coverage, progress,
+  ordered, meeting, agenda, agenda-weighted, agenda-meeting), a **polarity**
+  (prefer the more- or less-covered side), a **scope** (score over states *seen*
+  vs the active *frontier*), and several gates;
+- crucially, a **node-slack gate**: landmarks may override the node-count choice
+  *only* when the two sides' BDD-size estimates are within a slack — otherwise it
+  defers to node-count. Landmarks therefore only affect direction, **never** plan
+  cost: optimality is preserved.
+
+### 3.2 How we tested it — the "oracle" protocol
+
+A guidance method that rarely fires tells you little. To isolate whether the
+landmark signal carries *any* useful information, we built a deliberately
+aggressive test (presets `oracle`, `oracle-meet` in `misc/tests/compare-slbd.py`):
+
+> **Fully unmuzzle** the guidance (remove the slack gate; override *every*
+> decision) and compare **follow** (take the landmark-preferred direction) vs
+> **anti** (take its exact opposite, via a polarity flip), against the baseline.
+
+The logic: if *follow* is faster than *anti*, the signal is informative; if they
+are equal, it is noise; if *anti* is faster, the signal is *inverted* (and we
+should just flip it). This cleanly separates "the signal is wrong" from "the
+gating is wrong."
+
+### 3.3 The result: it doesn't help, and we know why
+
+Measured across two independent benchmark runs (`slbd-results/`):
+
+- **The more the guidance overrides node-count, the slower search gets.** Plain
+  `slbd` (~37% of decisions overridden) was **1.48× slower** than the baseline;
+  configurations that overrode almost nothing were ≈ baseline. Forcing overrides
+  only made it worse.
+- **The "correct" polarity was domain-dependent and inconsistent** — depot
+  preferred one direction, gripper the opposite — and the *wrong* polarity
+  **destroyed coverage** by driving BDD blow-ups.
+- **Mechanism (the key finding).** Node-count direction selection is already
+  *robust and near-optimal*. Landmarks measure **semantic goal-progress**, which
+  is **orthogonal to BDD representation size** — and BDD size is what actually
+  determines symbolic-search cost. So the landmark-preferred direction frequently
+  steers into the *larger-BDD* side. The node-slack gate, in hindsight, was simply
+  a **muzzle** limiting the damage of a net-negative signal.
+
+To our knowledge no prior work had tried landmarks for direction selection in
+symbolic bidirectional search, so **this negative result is itself novel**:
+*landmark-guided direction selection does not improve blind symbolic bidirectional
+search, because the binding cost is BDD size, not goal-distance.*
+
+### 3.4 The same wall, four more times
+
+We then eliminated the natural follow-on ideas, each measured to ground rather
+than argued:
+
+- **Meet-in-the-middle BDD signals** (prefer the direction whose frontier most
+  overlaps the opposite side's reached set; `meet_bdd`, `balance_bdd`) — **inert
+  or harmful**: the overlap is essentially empty until the search is already at
+  the meeting point, so the signal cannot act early enough.
+- **Trend-based budget control** (allocate forward/backward expansion effort by
+  the observed BDD-growth trend) — **no headroom**: profiling the per-layer
+  frontier sizes showed node-count already finds a near-optimal split (the two
+  sides' peak BDDs end up balanced, 1.0–1.7×), so a trend-aware controller would
+  make the same choice.
+- **Forward-reachability pruning of the backward search** — **self-defeating**:
+  removing forward-unreachable (spurious) backward states needs the
+  forward-reachable set, but computing that *is* the intractable forward search —
+  which is the very reason one uses bidirectional search.
+- **Beyond-h² acyclicity pruning** (blocks/depot: the `on`-relation must be
+  acyclic, an invariant h² mutexes miss) — **sound and optimal but BDD-hostile**:
+  encoding "no cycle" produces a multi-million-node constraint BDD that slows
+  search ~4× and provides no net benefit; the search blow-up is dominated by
+  *valid* configurations, not cycles.
+
+### 3.5 The pivot
+
+The consistent root cause across all of Part I: **the per-step direction /
+schedule / cheap-pruning decisions are robust — node-count is near-optimal — and
+the binding constraint is the *size of the BDDs themselves* (their contents), not
+which side you expand.** To actually improve the planner you must make the BDDs
+*smaller*. The dominant lever on BDD size is the **variable ordering** — which is
+Part II.
+
+---
+
+## 4. Part II — Constraint-aware variable ordering
+
+### 4.1 Related work and the precise novelty claim
 
 The general idea — *order variables that share constraints close together* — is
-**well established outside planning**:
-
-- **FORCE** (Aloul et al.) and **MINCE** (Aloul et al.) build a hypergraph from
-  CNF clauses/constraints and place co-constrained variables close, explicitly to
-  shrink BDDs.
-- Configuration-BDD compilation (Narodytska & Walsh) and OBDD knowledge
-  compilation use weighted constraint graphs for the same purpose.
-- **SATzilla** and the SAT algorithm-selection literature establish that
-  different orderings/solvers are best on *non-overlapping* instance sets, and
-  that **portfolios** are the standard robustness answer.
+**well established outside planning**: **FORCE** and **MINCE** (Aloul et al.)
+build a hypergraph from CNF clauses and place co-constrained variables close to
+shrink BDDs; configuration-BDD compilation (Narodytska & Walsh) and knowledge
+compilation do likewise; and **SATzilla** establishes that complementary
+orderings/solvers win on non-overlapping instances and that **portfolios** are
+the standard robustness answer.
 
 Within *symbolic planning*, prior orderings use the **causal graph** (GAMER),
 **precondition** co-occurrence (GamerPre; Kissmann & Hoffmann, JAIR 2014), or
 action syntax — but **not mutex/invariant co-occurrence**. Mutexes/invariants are
-used elsewhere (pruning, cBDDs, transition relations, SAS⁺ variable selection),
-and Torralba & Alcázar explicitly note the mutex-BDD size depends on the order
+used for pruning, constraint BDDs, transition relations, and SAS⁺ variable
+selection; Torralba & Alcázar even note the mutex-BDD size depends on the order
 but do not optimize for it.
 
-**Precise, defensible claim (verified by literature review):** *to our
+**Precise, defensible claim (verified by a literature review):** *to our
 knowledge, this is the first use in BDD-based symbolic classical planning of h²
 mutexes and exactly-one invariant groups as co-occurrence edges in the
-GAMER-style variable-ordering objective.* We explicitly frame our work as a
+GAMER-style variable-ordering objective.* We frame it explicitly as a
 **planning-specific adaptation** of constraint-graph ordering (FORCE/MINCE) +
-portfolio selection (SATzilla) — **not** a new general BDD-ordering paradigm. We
+portfolio selection (SATzilla) — *not* a new general BDD-ordering paradigm, and we
 avoid the over-broad claim "constraint-aware BDD ordering."
 
----
+### 4.2 Method
 
-## 4. Method
-
-We modify GAMER's influence graph (file `src/search/symbolic/opt_order.cc`):
-after adding the causal-graph edges, we add an edge (accumulating weight) between
-any two SAS⁺ variables whose facts co-occur in the same mutex or exactly-one
-invariant group, then run GAMER's existing optimizer unchanged. This gives three
-orderings, all using the *same* optimizer:
+We modify GAMER's influence graph (`src/search/symbolic/opt_order.cc`): after
+adding the causal-graph edges, we add an (accumulating) edge between any two SAS⁺
+variables whose facts co-occur in the same mutex or exactly-one invariant group,
+then run GAMER's existing optimizer unchanged. This yields three orderings, all
+using the *same* optimizer:
 
 1. **causal** — GAMER (causal edges only). *Baseline.*
-2. **constraint-only** — mutex/invariant co-occurrence edges only, no causal
-   (a FORCE/MINCE-style ordering). Option `constraint_only=true`.
+2. **constraint-only** — mutex/invariant co-occurrence edges only, no causal (a
+   FORCE/MINCE-style ordering). Option `constraint_only=true`.
 3. **combined** — causal + constraint edges. Option `constraint_order=true`.
 
-Exposed as `sbd(constraint_order=…, constraint_only=…)`; ~40 lines of code. The
-orderings change only the BDD representation, **never** which plan is found, so
-**cost-optimality is preserved by construction** (confirmed empirically: 0 cost
+Exposed as `sbd(constraint_order=…, constraint_only=…)`; ≈ 40 lines of core code.
+Because the ordering changes only the BDD representation and never which plan is
+found, **cost-optimality is preserved by construction** (confirmed: 0 cost
 mismatches across all runs).
 
 We also implement a **parallel ordering portfolio** (`misc/tests/portfolio.py`):
-run the three orderings concurrently and return the first solution. Its
-wall-clock equals the per-instance oracle; it is never slower than GAMER (causal
-is a component) and uses the otherwise-idle cores a single-threaded symbolic
-search leaves.
+run the three orderings concurrently, return the first solution. Its wall-clock
+equals the per-instance oracle; it is never slower than GAMER (causal is a
+component) and uses the otherwise-idle cores a single-threaded symbolic search
+leaves.
+
+### 4.3 The "oracle" (virtual best) — what it is and is not
+
+Throughout, the **oracle** denotes the *per-instance minimum* over the three
+orderings (the "virtual best" of the algorithm-selection literature). It is **not
+a deployable algorithm** — it has perfect hindsight, picking each instance's
+winner after the fact. Because GAMER is one of its three choices, the oracle is
+**≤ GAMER on every instance** by construction; it beats every single ordering
+*only because the winner changes from instance to instance* (complementarity). It
+measures the *size of the opportunity*; the **portfolio** realizes it at 3× CPU,
+and a 1× **selector** would realize it if one could predict the winner (see §9).
 
 ---
 
@@ -137,17 +247,20 @@ search leaves.
   driverlog, zenotravel, satellite, rovers, tpp, pipesworld-notankage, and the
   IPC-2008 opt set: elevators, scanalyzer, pegsol, sokoban, transport,
   woodworking; plus freecell).
-- **Harness:** custom parallel runner (`misc/tests/parallel-bench.py`), each run
-  in its own temp dir with a per-run memory limit, across a thread pool.
-- **Metrics:** coverage (solved within limit), plan cost (optimality check),
-  search time, and constraint-BDD size.
+- **Harness.** We wrote a **parallel runner** (`misc/tests/parallel-bench.py`):
+  each (instance, ordering) job runs in its own temp directory with a per-run
+  memory limit, across a thread pool — necessary because the planner is
+  single-threaded and the stock harness is sequential (it left us using ~1 of 16
+  cores). For landmark Part I we used `compare-slbd.py` with the oracle presets.
+- **Metrics.** Coverage (solved within limit), plan cost (optimality check),
+  search time, constraint-BDD size, and a few setup-time features.
 
 ---
 
 ## 6. Honest protocol limitation (read this)
 
 We evaluate on **real IPC domains** but with a **reduced, laptop-scale
-protocol**, *not* the IPC competition protocol. We state this plainly:
+protocol**, *not* the IPC competition protocol:
 
 | | This work | IPC standard |
 |---|---|---|
@@ -155,22 +268,22 @@ protocol**, *not* the IPC competition protocol. We state this plainly:
 | Instances/domain | all, capped ~40 | all |
 | Timeout | 90–300 s | 1800 s |
 | Memory | 3–4 GB | ~8 GB |
-| Hardware | one laptop (i7-13620H, 16 threads) | compute cluster |
+| Hardware | one laptop (i7-13620H, 16 threads, 32 GB) | compute cluster |
 
 The full IPC protocol (~1,800 instances × 1,800 s) is cluster-scale and
-infeasible here. Consequently **our coverage numbers are a proof-of-concept on
-standard domains and are not directly comparable to published IPC coverage.** To
-avoid a cherry-picked timeout, we record solve-times and report **coverage at
-multiple cutoffs**.
+infeasible here. **Our coverage numbers are therefore a proof-of-concept on
+standard domains, not directly comparable to published IPC coverage.** To avoid a
+cherry-picked timeout we record solve-times and report coverage at multiple
+cutoffs.
 
 ---
 
-## 7. Results
+## 7. Results (Part II)
 
 ### 7.1 Coverage is neutral (cost-optimal preserved)
 
-Rigorous run: 18 domains, all instances (cap 40), 300 s, 3 GB
-(`slbd-results/co-coverage.csv`; 551 instances). Coverage at search-time cutoffs:
+18 domains, all instances (cap 40), 300 s, 3 GB (`slbd-results/co-coverage.csv`;
+551 instances). Coverage at search-time cutoffs:
 
 | cutoff | causal (GAMER) | constraint-only | combined |
 |---|---|---|---|
@@ -178,17 +291,16 @@ Rigorous run: 18 domains, all instances (cap 40), 300 s, 3 GB
 | 180 s | 307 | 302 | 307 |
 | 300 s | 314 | 308 | 315 |
 
-- **`combined` ties GAMER** at 90/180 s and is only **+1 at 300 s**, and **not
-  strictly ≥ GAMER** (it loses one instance on woodworking, gains on
-  depot/sokoban). **`constraint-only` is net −6.**
-- **0 cost mismatches** — optimality preserved everywhere.
-
-**Conclusion: there is no coverage improvement at scale.**
+`combined` ties GAMER at 90/180 s and is only **+1 at 300 s**, and **not strictly
+≥ GAMER** (it loses one woodworking instance, gains on depot/sokoban).
+`constraint-only` is net **−6**. **0 cost mismatches.** → **No coverage
+improvement at scale.** (An earlier, smaller sample suggested "+3, no regression";
+that was a first-8-instances/90 s artifact, corrected here.)
 
 ### 7.2 Speed: strong complementarity, no single-ordering winner
 
-Clean low-contention run (4 workers, 120 s; `slbd-results/co-clean-final.csv`;
-184 commonly-solved instances). Geomean search time vs GAMER (<1 = faster):
+Clean low-contention run (4 workers, 120 s; `slbd-results/co-clean-final.csv`; 184
+commonly-solved instances). Geomean search time vs GAMER (<1 = faster):
 
 | | constraint-only | combined | **oracle (best-of-3)** |
 |---|---|---|---|
@@ -204,59 +316,61 @@ Clean low-contention run (4 workers, 120 s; `slbd-results/co-clean-final.csv`;
 | woodworking | 1.02 | 1.22 | 0.88 |
 
 - **No single 1× ordering beats GAMER overall:** combined ≈ neutral (1.02),
-  constraint-only worse (1.19) — but constraint-only is *spectacular* on a few
+  constraint-only worse (1.19) — yet constraint-only is *spectacular* on a few
   domains (pipesworld, scanalyzer, transport) and *catastrophic* on others
   (rovers/satellite ≈ 3.5×).
-- **Each ordering is the per-instance best on ≈ ⅓ of instances** (causal 52 /
-  constraint-only 53 / combined 51 on an earlier 156-instance sample) — the
-  classic complementarity SATzilla describes.
-- **The per-instance oracle is −16% and ≤ 1.0 in *every* domain** — selection is
-  a genuine, strict (per-domain) improvement.
+- **Each ordering is the per-instance best on ≈ ⅓ of instances** — the
+  complementarity SATzilla describes, here *within* symbolic-planning orderings.
+- **The per-instance oracle is −16% and ≤ 1.0 in every domain.**
 
 ### 7.3 Realizing the oracle: the portfolio
 
-The parallel portfolio reaches the oracle wall-clock — never slower than GAMER,
-much faster on the complementary domains (e.g. it picks constraint-only on
-pipesworld, combined on tpp, and *causal* on satellite, correctly avoiding the
-3.5× ordering). Its cost is **3× CPU**, which is essentially free here: symbolic
-search is single-threaded and modern machines leave many cores idle.
+The portfolio reaches the oracle wall-clock — never slower than GAMER, much
+faster on the complementary domains (it picks constraint-only on pipesworld,
+combined on tpp, and *causal* on satellite, correctly avoiding the 3.5×
+ordering). Cost: **3× CPU**, essentially free here since symbolic search is
+single-threaded and machines leave many cores idle.
 
 ### 7.4 Mechanism
 
-The constraint signal reliably shrinks the constraint BDDs (−33 % to −94 % in
-node count). It *wins* when those constraint BDDs are on the critical path, and
-*loses* when the search frontier dominates and the constraint-informed order
-hurts the frontier (e.g. blocks). The win is therefore domain-structural, not
-universal.
+The constraint signal reliably shrinks the constraint BDDs (−33% to −94% in node
+count). It *wins* when those constraint BDDs are on the critical path, and *loses*
+when the search frontier dominates and the constraint-informed order hurts the
+frontier (e.g. blocks). The effect is domain-structural, not universal.
 
 ---
 
 ## 8. Why a cheap selector fails (negative result)
 
-If selection captures −16 %, can we pick the right ordering *without* running all
-three (avoiding the 3× CPU)? We tested simple setup-time predictors
+If selection captures −16%, can we pick the right ordering *without* running all
+three (avoiding 3× CPU)? We tested simple setup-time predictors
 (co-occurrence-edge density, mutex-BDD size/reduction). **They fail** — no rule
 beat GAMER (`co-edges/var<5 → constraint-only` gave 1.29; `mutex-reduction<0.3`
-gave 1.00). The relative speed of the orderings is governed by **search
-dynamics, not static structure** (scanalyzer wins at high edge density while
-depot loses at the same density). This mirrors SATzilla's finding that effective
-selection needs *learned* empirical models, not hand rules — left as future work.
+gave 1.00). The relative speed of the orderings is governed by **search dynamics,
+not static structure** (scanalyzer wins at high edge density while depot loses at
+the same density). This mirrors SATzilla's lesson that effective selection needs a
+*learned* model, not hand rules — left as future work.
 
 ---
 
 ## 9. Conclusion and future work
 
-We brought **constraint-graph variable ordering** (FORCE/MINCE) and **portfolio
-selection** (SATzilla) into symbolic *planning's* mutex/invariant structure — to
-our knowledge a first in this line — and characterized the result honestly:
+**Part I (negative, original):** landmark-guided direction selection — and a
+family of related direction/schedule/pruning ideas — do **not** improve blind
+symbolic bidirectional search, because node-count selection is robust and the
+binding cost is intrinsic BDD size, not the search schedule. We established this
+with a clean "oracle" (follow-vs-anti) test protocol.
 
-- **Coverage neutral; cost-optimal preserved.**
-- **No single 1× ordering beats GAMER**, but the orderings are **strongly
-  complementary** (per-instance oracle −16 %, never worse per domain).
-- A **parallel portfolio** realizes the oracle at 3× CPU (free on idle cores).
-- **Static selection-prediction fails**; the conflict is search-dynamic.
+**Part II (positive but incremental):** bringing constraint-graph ordering
+(FORCE/MINCE) and portfolio selection (SATzilla) into symbolic planning's
+mutex/invariant structure — a first in this line — yields **strongly
+complementary** orderings (per-instance oracle −16%, never worse per domain),
+realized by a parallel portfolio at 3× CPU. **No single 1× ordering beats GAMER**,
+coverage is neutral, cost-optimality preserved, and **static selection-prediction
+fails.**
 
-This is an **incremental, honestly-mixed** result, not a new dominant algorithm.
+Honestly: this is an **incremental, mixed** outcome — a rigorous negative result
+plus a complementarity study and a portfolio — not a new dominant algorithm.
 
 **Future work:** (1) a *learned* (SATzilla-style) or *probe-based* in-engine
 selector to realize the oracle at ~1× CPU; (2) typed/weighted mutex edges and
@@ -267,15 +381,16 @@ a cluster; (4) constraint-aware ordering for heuristic symbolic search (SymBA*).
 
 ## Reproducibility
 
-All code, options, presets, and result CSVs are in this repo. Key entry points:
-`sbd(constraint_order=…, constraint_only=…)`;
-`misc/tests/parallel-bench.py`; `misc/tests/portfolio.py`;
-`misc/tests/feature_analysis.py`; `slbd-results/co-*.csv`. RNG is fixed
-(seed 2011) — orderings are deterministic.
+All code, options, presets, and result CSVs are in this repo. Entry points:
+`sbd(constraint_order=…, constraint_only=…)`; the `slbd(...)` engine and `oracle`
+presets (Part I); `misc/tests/parallel-bench.py`; `misc/tests/portfolio.py`;
+`misc/tests/feature_analysis.py`; `slbd-results/co-*.csv`. RNG is fixed (seed
+2011) — orderings are deterministic.
 
 ## Key references
 
-FORCE (Aloul et al.); MINCE (Aloul et al.); Edelkamp & Kissmann, GAMER;
-Kissmann & Hoffmann, *BDD Ordering Heuristics for Classical Planning* (JAIR 2014);
-Torralba & Alcázar, *Constrained Symbolic Search* (SoCS 2013); Torralba et al.
-(AIJ 2017); Xu et al., *SATzilla* (JAIR 2008); Narodytska & Walsh (IJCAI 2007).
+FORCE, MINCE (Aloul et al.); Edelkamp & Kissmann, GAMER; Kissmann & Hoffmann,
+*BDD Ordering Heuristics for Classical Planning* (JAIR 2014); Torralba & Alcázar,
+*Constrained Symbolic Search* (SoCS 2013); Torralba et al. (AIJ 2017); Xu et al.,
+*SATzilla* (JAIR 2008); Narodytska & Walsh (IJCAI 2007); Richter & Westphal, LAMA
+(landmarks).
