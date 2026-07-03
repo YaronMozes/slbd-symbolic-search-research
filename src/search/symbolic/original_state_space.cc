@@ -47,6 +47,14 @@ OriginalStateSpace::OriginalStateSpace(SymVariables *v,
     }
     cout << "TR_SIZE: num_trs=" << tr_count
          << " total_nodes=" << tr_nodes << endl;
+
+    // Probe mode (env SLBD_TR_PROBE): report the TR size under this variable
+    // order and exit immediately — used by the build-probe ordering selector
+    // (argmin TR size beats always-GAMER, unlike task-level features).
+    if (getenv("SLBD_TR_PROBE")) {
+        cout << "TR_PROBE_EXIT" << endl;
+        exit(0);
+    }
 }
 
 void OriginalStateSpace::init_mutex(const std::vector<MutexGroup> &mutex_groups) {
