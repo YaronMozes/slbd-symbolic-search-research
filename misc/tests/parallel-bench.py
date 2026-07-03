@@ -66,10 +66,11 @@ def run_one(job):
     solved = 1 if "Solution found." in out else 0
     cost = (re.findall(r"Plan cost: (\d+)", out) or [""])[0]
     st = (re.findall(r"Search time: ([0-9.]+)s", out) or [""])[0]
-    mx = (re.findall(r"total_nodes=(\d+)", out) or [""])[0]
+    mx = (re.findall(r"MUTEX_BDD_SIZE:.*total_nodes=(\d+)", out) or [""])[0]
     tv = (re.findall(r"Translator variables: (\d+)", out) or [""])[0]
     ce = (re.findall(r"co_occurrence_edges_added=(\d+)", out) or [""])[0]
-    return (d, pname, cfgname, solved, cost, st, mx, tv, ce)
+    tr = (re.findall(r"TR_SIZE:.*total_nodes=(\d+)", out) or [""])[0]
+    return (d, pname, cfgname, solved, cost, st, mx, tv, ce, tr)
 
 
 def main():
@@ -112,7 +113,7 @@ def main():
 
     with open(args.output, "w") as f:
         f.write("domain,problem,config,solved,cost,search_time,mutex_nodes,"
-                "sas_vars,co_edges\n")
+                "sas_vars,co_edges,tr_nodes\n")
         for r in rows:
             f.write(",".join(str(x) for x in r) + "\n")
     print("Wrote %s" % args.output)
@@ -122,7 +123,7 @@ def main():
     cfgnames = [c[0] for c in configs]
     base = cfgnames[0]
     by = {}
-    for (d, pn, cn, s, cost, st, mx, tv, ce) in rows:
+    for (d, pn, cn, s, cost, st, mx, tv, ce, tr) in rows:
         by.setdefault((d, pn), {})[cn] = (s, st)
     print("\nPer-domain: solved counts and geomean search-time ratio vs %s" % base)
     domains = sorted(set(d for (d, _) in by))

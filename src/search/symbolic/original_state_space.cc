@@ -33,6 +33,20 @@ OriginalStateSpace::OriginalStateSpace(SymVariables *v,
 
 
     init_transitions(indTRs);
+
+    // Diagnostic: total size of the merged transition relations under the
+    // current variable order. TRs participate in every image/preimage, so
+    // TR size is a candidate build-time predictor of which ordering will
+    // search fastest (unlike the task-level features, which failed).
+    long tr_nodes = 0, tr_count = 0;
+    for (const auto &entry : transitions) {
+        for (const TransitionRelation &tr : entry.second) {
+            tr_nodes += tr.nodeCount();
+            ++tr_count;
+        }
+    }
+    cout << "TR_SIZE: num_trs=" << tr_count
+         << " total_nodes=" << tr_nodes << endl;
 }
 
 void OriginalStateSpace::init_mutex(const std::vector<MutexGroup> &mutex_groups) {

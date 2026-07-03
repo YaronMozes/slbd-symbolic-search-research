@@ -147,13 +147,23 @@ void InfluenceGraph::compute_gamer_ordering(std::vector <int> &var_order,
 
 
 void InfluenceGraph::get_ordering(vector <int> &ordering) const {
-    double value_optimization_function = optimize_variable_ordering_gamer(ordering, 50000);
+    // Convergence knobs (env): the denser combined constraint graphs may need
+    // more optimization than the sparse causal graph the defaults were tuned on.
+    int iters = 50000;
+    if (const char *s = getenv("SLBD_ORDER_ITERS")) {
+        iters = max(1000, atoi(s));
+    }
+    int restarts = 20;
+    if (const char *s = getenv("SLBD_ORDER_RESTARTS")) {
+        restarts = max(0, atoi(s));
+    }
+    double value_optimization_function = optimize_variable_ordering_gamer(ordering, iters);
     DEBUG_MSG(cout << "Value: " << value_optimization_function << endl;);
 
-    for (int counter = 0; counter < 20; counter++) {
+    for (int counter = 0; counter < restarts; counter++) {
         vector <int> new_order;
         randomize(ordering, new_order); //Copy the order randomly
-        double new_value = optimize_variable_ordering_gamer(new_order, 50000);
+        double new_value = optimize_variable_ordering_gamer(new_order, iters);
 
         if (new_value < value_optimization_function) {
             value_optimization_function = new_value;
