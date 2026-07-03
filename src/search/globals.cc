@@ -360,9 +360,12 @@ const shared_ptr<AbstractTask> g_root_task() {
 }
 
 shared_ptr<utils::RandomNumberGenerator> g_rng() {
-    // Use an arbitrary default seed.
+    // Use an arbitrary default seed. Env var SLBD_RNG_SEED overrides it
+    // (used for the variable-ordering seed-variance control experiments;
+    // default path is unchanged).
     static shared_ptr<utils::RandomNumberGenerator> rng =
-        make_shared<utils::RandomNumberGenerator>(2011);
+        make_shared<utils::RandomNumberGenerator>(
+            getenv("SLBD_RNG_SEED") ? atoi(getenv("SLBD_RNG_SEED")) : 2011);
     return rng;
 }
 

@@ -36,7 +36,7 @@ def discover(bench, domains, n):
 
 
 def run_one(job):
-    d, dom, prob, pname, cfgname, search, timeout, mem = job
+    d, dom, prob, pname, cfgname, search, timeout, mem, env_over = job
     workdir = tempfile.mkdtemp(prefix="pbench_")
     plan = os.path.join(workdir, "sas_plan")
     cmd = [sys.executable, PLANNER, "--build", "release64",
@@ -44,9 +44,12 @@ def run_one(job):
            "--search-time-limit", "%ss" % timeout,
            "--overall-memory-limit", "%sM" % mem,
            "--plan-file", plan, dom, prob, "--search", search]
+    env = dict(os.environ)
+    env.update(env_over)
     try:
         out = subprocess.run(cmd, cwd=workdir, stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT, timeout=timeout + 180
+                             stderr=subprocess.STDOUT, timeout=timeout + 180,
+                             env=env
                              ).stdout.decode("utf-8", "replace")
     except subprocess.TimeoutExpired:
         out = "HARNESS TIMEOUT"
@@ -79,12 +82,21 @@ def main():
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--config", action="append", required=True,
                     metavar="NAME=SEARCH", help="e.g. causal=sbd()")
+    ap.add_argument("--config-env", action="append", default=[],
+                    metavar="NAME:KEY=VAL",
+                    help="per-config env override, repeatable")
     ap.add_argument("--output", required=True)
     args = ap.parse_args()
 
     configs = [c.split("=", 1) for c in args.config]
+    cfg_env = {}
+    for spec in args.config_env:
+        name, kv = spec.split(":", 1)
+        k, v = kv.split("=", 1)
+        cfg_env.setdefault(name, {})[k] = v
     tasks = discover(args.benchmark_dir, args.domains, args.tasks_per_domain)
-    jobs = [(d, dom, prob, pn, cn, cs, args.timeout, args.memory)
+    jobs = [(d, dom, prob, pn, cn, cs, args.timeout, args.memory,
+             cfg_env.get(cn, {}))
             for (d, dom, prob, pn) in tasks for (cn, cs) in configs]
     print("%d tasks x %d configs = %d runs, %d workers, %dMB/run" % (
         len(tasks), len(configs), len(jobs), args.workers, args.memory))

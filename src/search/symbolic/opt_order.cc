@@ -65,9 +65,21 @@ void InfluenceGraph::compute_gamer_ordering(std::vector <int> &var_order,
         // remove the regression while keeping the useful long-range edges that
         // help sparse-causal domains (e.g. depot).
         bool skip_causal = getenv("SLBD_CO_SKIP_CAUSAL") != nullptr;
+        // Group-size normalization (env SLBD_CO_NORM): a mutex group of k facts
+        // contributes k(k-1)/2 pairs; unnormalized, large invariant groups
+        // (e.g. blocks' ~n-fact position groups) swamp the sparse causal edges
+        // by sheer pair count. Normalizing the per-pair weight by (k-1) caps
+        // each group's total influence at ~w*k/2, keeping size-2 h2 mutex pairs
+        // at full weight while restoring the causal signal's voice in
+        // dense-group domains.
+        bool norm = getenv("SLBD_CO_NORM") != nullptr;
         long edges = 0, skipped = 0;
         for (const MutexGroup &mg : g_mutex_groups) {
             const vector<FactPair> &facts = mg.getFacts();
+            double pair_w = w;
+            if (norm && facts.size() > 1) {
+                pair_w = w / static_cast<double>(facts.size() - 1);
+            }
             for (size_t i = 0; i < facts.size(); ++i) {
                 for (size_t j = i + 1; j < facts.size(); ++j) {
                     int a = facts[i].var;
@@ -84,15 +96,23 @@ void InfluenceGraph::compute_gamer_ordering(std::vector <int> &var_order,
                             continue;
                         }
                     }
-                    ig_partitions.add_influence(a, b, w);
+                    ig_partitions.add_influence(a, b, pair_w);
                     ++edges;
                 }
             }
+        }
+        // Control (env SLBD_CO_BINARIZE): collapse all weights to existence,
+        // reproducing the original unweighted-topology objective exactly.
+        bool binarize = getenv("SLBD_CO_BINARIZE") != nullptr;
+        if (binarize) {
+            ig_partitions.binarize();
         }
         cout << "CONSTRAINT_ORDER: mutex_groups=" << g_mutex_groups.size()
              << " co_occurrence_edges_added=" << edges
              << " skipped_causal=" << skipped
              << " skip_causal_mode=" << (skip_causal ? 1 : 0)
+             << " norm_mode=" << (norm ? 1 : 0)
+             << " binarize_mode=" << (binarize ? 1 : 0)
              << " weight=" << w << endl;
     }
 
@@ -167,13 +187,15 @@ double InfluenceGraph::optimize_variable_ordering_gamer(vector <int> &order,
             if ((int)i == swapIndex1 || (int)i == swapIndex2)
                 continue;
 
-            if (influence(order[i], order[swapIndex1]))
-                totalDistance += (-(i - swapIndex1) * (i - swapIndex1)
-                                  + (i - swapIndex2) * (i - swapIndex2));
+            double w1 = influence(order[i], order[swapIndex1]);
+            if (w1)
+                totalDistance += w1 * (-(i - swapIndex1) * (i - swapIndex1)
+                                       + (i - swapIndex2) * (i - swapIndex2));
 
-            if (influence(order[i], order[swapIndex2]))
-                totalDistance += (-(i - swapIndex2) * (i - swapIndex2)
-                                  + (i - swapIndex1) * (i - swapIndex1));
+            double w2 = influence(order[i], order[swapIndex2]);
+            if (w2)
+                totalDistance += w2 * (-(i - swapIndex2) * (i - swapIndex2)
+                                       + (i - swapIndex1) * (i - swapIndex1));
         }
 
         //Apply the swap if it is worthy
@@ -200,11 +222,16 @@ double InfluenceGraph::optimize_variable_ordering_gamer(vector <int> &order,
 
 
 double InfluenceGraph::compute_function(const std::vector <int> &order) const {
+    // Weight-aware linear-arrangement objective. NOTE: the original code used
+    // the influence value only as an existence test, silently ignoring edge
+    // weights; with weight-aware evaluation, causal-only graphs (all weights
+    // exactly 1) produce bit-identical behaviour to the original.
     double totalDistance = 0;
     for (size_t i = 0; i < order.size() - 1; i++) {
         for (size_t j = i + 1; j < order.size(); j++) {
-            if (influence(order[i], order[j])) {
-                totalDistance += (j - i) * (j - i);
+            double w = influence(order[i], order[j]);
+            if (w) {
+                totalDistance += w * (j - i) * (j - i);
             }
         }
     }
@@ -244,13 +271,15 @@ void InfluenceGraph::optimize_variable_ordering_gamer(vector <int> &order,
             if ((int)i == swapIndex1 || (int)i == swapIndex2)
                 continue;
 
-            if (influence(order[i], order[swapIndex1]))
-                totalDistance += (-(i - swapIndex1) * (i - swapIndex1)
-                                  + (i - swapIndex2) * (i - swapIndex2));
+            double w1 = influence(order[i], order[swapIndex1]);
+            if (w1)
+                totalDistance += w1 * (-(i - swapIndex1) * (i - swapIndex1)
+                                       + (i - swapIndex2) * (i - swapIndex2));
 
-            if (influence(order[i], order[swapIndex2]))
-                totalDistance += (-(i - swapIndex2) * (i - swapIndex2)
-                                  + (i - swapIndex1) * (i - swapIndex1));
+            double w2 = influence(order[i], order[swapIndex2]);
+            if (w2)
+                totalDistance += w2 * (-(i - swapIndex2) * (i - swapIndex2)
+                                       + (i - swapIndex1) * (i - swapIndex1));
         }
 
         //Apply the swap if it is worthy

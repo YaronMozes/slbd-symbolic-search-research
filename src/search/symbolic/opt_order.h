@@ -40,6 +40,18 @@ public:
         influence_graph[v2][v1] += delta;
     }
 
+    // Collapse all edge weights to 1 (existence only). Reproduces the original
+    // unweighted-topology objective exactly; used as an experimental control.
+    void binarize() {
+        for (auto &row : influence_graph) {
+            for (auto &v : row) {
+                if (v > 0) {
+                    v = 1.0;
+                }
+            }
+        }
+    }
+
     static void compute_gamer_ordering(std::vector <int> &ordering,
                                        bool constraint_aware = false,
                                        double co_weight = 1.0,
