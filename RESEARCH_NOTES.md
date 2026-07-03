@@ -48,9 +48,21 @@ over-broad claim "constraint-aware BDD ordering" (pre-empted by FORCE/MINCE).
 >   (worse), combined **1.02** (~neutral), **oracle 0.84 (−16%, never worse in
 >   any domain)**. Big domain-specific swings for constraint-only (pipesworld
 >   0.58, scanalyzer 0.70; but rovers 3.93, satellite 3.46).
-> - **The only configuration that beats GAMER is the per-instance oracle (−16%),
->   realized by the portfolio (3× CPU) or a selector (which fails).** No single
->   1× ordering beats GAMER.
+> - **The only *unweighted* configuration that beats GAMER is the per-instance
+>   oracle (−16%),** realized by the portfolio (3× CPU) or a selector (fails).
+>
+> **UPDATE (2026-06-30, supersedes the line above):** we found the GAMER
+> optimizer **ignores edge weights** (existence-only objective) — `co_weight`
+> was a no-op and "combined" was an unweighted topology blend. After the
+> weight-aware fix (baseline verified bit-identical; `SLBD_CO_BINARIZE`
+> reproduces old behaviour), the **weight-fixed combined (comb-w) is the first
+> single 1× ordering to beat GAMER** at the authoritative protocol
+> (`co-definitive.csv`, 551 instances, 300s): **coverage ≥ causal in every
+> domain and at every cutoff (+3 net), overall speed 0.991, 0 cost mismatches.**
+> Seed control (causal-s42): 1.040 overall, loses coverage in 2 domains → the
+> effect is the constraint signal, not optimizer randomness. Deeper portfolio:
+> seeds+signals oracle 0.728 (`co-weightfix.csv`). Blocks' hard instances still
+> regress individually; sokoban/freecell slower (1.28/1.21).
 
 Results (vs GAMER baseline, cost-optimal preserved everywhere):
 - **Reliably shrinks the constraint (mutex) BDDs** wherever they exist: −33% to

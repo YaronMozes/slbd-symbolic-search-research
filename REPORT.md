@@ -27,14 +27,20 @@ planners conjoin *constraint BDDs* (h² mutexes, exactly-one invariant groups)
 into search at every step, and that their size depends on the order, yet the
 GAMER ordering objective ignores them. Inspired by constraint-graph ordering in
 SAT (FORCE/MINCE) and portfolio selection (SATzilla), we add **mutex/invariant
-co-occurrence edges** to the ordering objective. On 18 IPC optimal-STRIPS domains
-the resulting orderings are **strongly complementary** — a per-instance oracle is
-**~16% faster than GAMER and never slower in any domain** — but **no single
-ordering beats GAMER** (coverage is neutral; combined ≈ neutral; constraint-only
-is worse on average yet spectacular on specific domains, e.g. −42% on
-pipesworld). We realize the oracle with a parallel **portfolio** at 3× CPU, and
-show that **cheap static selection of the ordering fails.** All orderings
-preserve cost-optimality.
+co-occurrence edges** to the ordering objective. Doing so exposed a further
+finding: **the deployed GAMER optimizer ignores its own edge weights** (an
+existence-only objective); our initial "combined" ordering was therefore an
+unweighted topology blend, and it did not beat GAMER (coverage neutral,
+constraint-only worse on average yet spectacular on specific domains, e.g. −42%
+on pipesworld). After fixing the objective to be weight-aware — provably
+baseline-preserving — the **weight-fixed combined ordering is coverage-≥-GAMER
+in every one of the 18 domains (+3 net at 300 s) with overall speed 0.991×, at
+1× CPU**, and a **seed-variance control** shows this is attributable to the
+constraint signal, not optimizer randomness (a fresh seed is 1.04× and loses
+coverage in two domains). The orderings remain **strongly complementary**: a
+per-instance oracle over signals and seeds reaches **~0.73×**, which we realize
+with a parallel **portfolio** (3× CPU on otherwise-idle cores); **cheap static
+selection of the ordering fails.** All orderings preserve cost-optimality.
 
 ---
 
@@ -280,7 +286,49 @@ cutoffs.
 
 ## 7. Results (Part II)
 
-### 7.1 Coverage is neutral (cost-optimal preserved)
+### 7.0 A defect in the ordering optimizer, and the weight-fixed ordering
+
+Reviewing the optimizer, we found that GAMER's linear-arrangement objective
+(`compute_function` and both incremental swap-delta evaluations) used the
+influence value **only as an existence test — edge weights were never read.**
+Consequences: our earlier `co_weight` sweep was a no-op (its "flatness" was the
+bug, not saturation), and "combined" was an *unweighted topology* blend in which
+large mutex groups (k(k−1)/2 pairs each) swamped the sparse causal edges —
+explaining why combined was *worse than constraint-only* on blocks.
+
+We made the objective weight-aware (verified: causal-only weights are all 1, so
+the **GAMER baseline is bit-identical**; a `binarize` control reproduces the old
+behaviour exactly). The weight-fixed combined ordering (**comb-w**) was then
+validated at the authoritative protocol (551 instances, 18 domains, all
+instances capped 40, 300 s; `slbd-results/co-definitive.csv`), with a
+**seed-variance control** (`causal-s42`: plain GAMER under a different RNG seed)
+to separate signal from local-search randomness:
+
+| | causal (GAMER) | causal-s42 (seed control) | **comb-w** |
+|---|---|---|---|
+| Coverage @90/180/300 s | 290/305/310 | 293/308/312 | **294/307/313** |
+| Domains with coverage loss | — | **2** (rovers, woodworking) | **0 (never worse)** |
+| Overall speed geomean | 1.000 | 1.040 | **0.991** |
+| Cost mismatches | 0 | 0 | 0 |
+
+- **comb-w is coverage-≥-GAMER in every domain** (+3 net: depot, logistics,
+  sokoban) and ≥ at every cutoff — the strict-coverage property the unweighted
+  combined ordering *failed* (it lost woodworking). Run-to-run coverage variance
+  is ≈ ±4 instances, so we emphasise the never-worse-per-domain pattern (also
+  reproduced in an independent smaller run) over the +3 total.
+- **The seed control shows this is signal, not randomness:** a fresh seed is
+  *slower* overall (1.040) and *loses* coverage in two domains, while comb-w is
+  0.991 and never worse. Seed variance alone does not reproduce the effect.
+- comb-w is faster in 12 of 18 domains (scanalyzer 0.80, depot 0.83,
+  woodworking 0.84, pipesworld 0.88), slower in 6 (sokoban 1.28, freecell 1.21);
+  hard blocks instances still individually regress.
+- A companion 7-configuration experiment (`co-weightfix.csv`) decomposes the
+  portfolio opportunity: a 3-seed oracle reaches 0.871, the signal orderings
+  0.780, and **seeds + signals together 0.728** — the constraint signal adds
+  diversity beyond randomness (e.g. pipesworld: all causal seeds ≈ 1.0,
+  constraint-only 0.53).
+
+### 7.1 Coverage under the *unweighted* orderings was neutral (cost-optimal preserved)
 
 18 domains, all instances (cap 40), 300 s, 3 GB (`slbd-results/co-coverage.csv`;
 551 instances). Coverage at search-time cutoffs:
