@@ -195,6 +195,34 @@ needs an in-engine probe — well-scoped future work.
 
 ---
 
+## Audit round 2 + exploration sweep (2026-07-04)
+
+**Two more latent defects confirmed and fixed** (both off the blind-search
+path — published numbers unaffected): (1) `init_mutex` asserted an *incomplete*
+exactly-one disjunction as an invariant when a group variable is irrelevant
+(unsound pruning on the abstraction/PDB path; flag corrected true→false);
+(2) `addDeadEndStates(fw, bw)` pushed backward dead-ends into the *forward*
+filter list (copy-paste; overload currently uncalled). With the weight-blind
+objective, that is **three real defects** found by auditing this deployed
+research codebase.
+
+**Sweep2** (`co-sweep2.csv`; first *meaningful* `co_weight` sweep — weights only
+became live after the objective fix): performance is mildly weight-sensitive
+(w=4: 0.941 overall but −1 coverage vs w=1 on the slice); **comb-w1 keeps the
+best coverage profile and remains the headline configuration.** Weighted
+constraint-only behaves like the old constraint-only (pipesworld 0.51,
+satellite 3.48). A **bit-width-aware objective** (`SLBD_BITWIDTH`: distances in
+binary-variable offsets — the BDD's real geometry — rather than FD-variable
+slots) is *not* a global win (~1.00 overall, woodworking 1.49) but contributes
+genuine diversity: blocks 0.88, comb-w-bitw depot 0.77, scanalyzer 0.52
+(caveat: some of this may be perturbation variance, per the seed-control
+lesson). **Portfolio effect: the 8-config per-instance oracle reaches 0.679
+(−32%)**, with the per-instance best spread across *all eight* configurations
+(max 12/67) — extreme complementarity; the parallel portfolio (≤ 8 members on a
+16-thread machine) remains wall-clock-free.
+
+---
+
 ## Context — the negative-result characterization that led here
 
 Before the ordering idea, seven approaches were measured and **all fail to beat
