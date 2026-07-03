@@ -116,6 +116,26 @@ void InfluenceGraph::compute_gamer_ordering(std::vector <int> &var_order,
              << " weight=" << w << endl;
     }
 
+    // Bit-width-aware objective (env SLBD_BITWIDTH): GAMER measures pair
+    // distance in FD-variable slots, but variables occupy ceil(log2(dom))
+    // binary BDD variables each — the real geometry is bit offsets. Same
+    // modeling-infidelity class as the ignored edge weights.
+    if (getenv("SLBD_BITWIDTH")) {
+        vector<int> widths;
+        long total_bits = 0;
+        for (int dom : g_variable_domain) {
+            int bits = 1;
+            while ((1 << bits) < dom) {
+                ++bits;
+            }
+            widths.push_back(bits);
+            total_bits += bits;
+        }
+        ig_partitions.set_bit_widths(widths);
+        cout << "BITWIDTH_ORDER: vars=" << widths.size()
+             << " total_bits=" << total_bits << endl;
+    }
+
     ig_partitions.get_ordering(var_order);
 
     // cout << "Var ordering: ";
@@ -169,8 +189,60 @@ void InfluenceGraph::randomize(vector <int> &ordering, vector<int> &new_order) {
 
 
 
+double InfluenceGraph::eval_bitwidth(
+    const vector<int> &order,
+    const vector<pair<pair<int, int>, double>> &edges) const {
+    // Position of each FD variable = centre of its bit block in this order.
+    vector<double> pos(order.size());
+    double acc = 0;
+    for (int v : order) {
+        pos[v] = acc + bit_widths[v] * 0.5;
+        acc += bit_widths[v];
+    }
+    double total = 0;
+    for (const auto &e : edges) {
+        double d = pos[e.first.first] - pos[e.first.second];
+        total += e.second * d * d;
+    }
+    return total;
+}
+
 double InfluenceGraph::optimize_variable_ordering_gamer(vector <int> &order,
                                                       int iterations) const {
+    if (!bit_widths.empty()) {
+        // Bit-position objective: variables have different bit widths, so a
+        // swap shifts every variable in between — the O(n) incremental delta
+        // below is invalid. Full re-evaluation per proposal over the edge
+        // list (O(n+E)); iterations reduced to compensate.
+        vector<pair<pair<int, int>, double>> edges;
+        for (size_t a = 0; a + 1 < influence_graph.size(); ++a) {
+            for (size_t b = a + 1; b < influence_graph.size(); ++b) {
+                if (influence_graph[a][b]) {
+                    edges.push_back({{static_cast<int>(a),
+                                      static_cast<int>(b)},
+                                     influence_graph[a][b]});
+                }
+            }
+        }
+        double total = eval_bitwidth(order, edges);
+        int iters = max(2000, iterations / 10);
+        for (int counter = 0; counter < iters; counter++) {
+            int i = (*g_rng())(order.size());
+            int j = (*g_rng())(order.size());
+            if (i == j) {
+                continue;
+            }
+            std::swap(order[i], order[j]);
+            double t2 = eval_bitwidth(order, edges);
+            if (t2 < total) {
+                total = t2;
+            } else {
+                std::swap(order[i], order[j]);
+            }
+        }
+        return total;
+    }
+
     double totalDistance = compute_function(order);
 
     double oldTotalDistance = totalDistance;

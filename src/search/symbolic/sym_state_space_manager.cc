@@ -78,10 +78,13 @@ void SymStateSpaceManager::addDeadEndStates(const std::vector<BDD> &fw_dead_ends
     for (BDD bdd : bw_dead_ends) {
         bdd = shrinkForall(bdd);
         if (!(bdd.IsZero())) {
-            notDeadEndFw.push_back(!bdd);
+            // Copy-paste bug fixed: bw dead ends were pushed into the FW list.
+            // (This overload currently has no callers; fixed for correctness.)
+            notDeadEndBw.push_back(!bdd);
         }
     }
     mergeBucketAnd(notDeadEndFw);
+    mergeBucketAnd(notDeadEndBw);
 }
 
 

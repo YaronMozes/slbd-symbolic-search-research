@@ -122,7 +122,12 @@ void OriginalStateSpace::init_mutex(const std::vector<MutexGroup> &mutex_groups,
 
             for (auto &fluent : invariant_group) {
                 if (!isRelevantVar(fluent.var)) {
-                    exactlyOneRelevant = true;
+                    // Latent soundness bug fixed: this previously set the flag
+                    // to TRUE and broke, asserting an INCOMPLETE exactly-one
+                    // disjunction as an invariant (unsound if any group var is
+                    // irrelevant). Never triggered in the original state space
+                    // (all vars relevant); mattered only for abstractions.
+                    exactlyOneRelevant = false;
                     break;
                 }
                 bddInvariant += vars->preBDD(fluent.var, fluent.value);

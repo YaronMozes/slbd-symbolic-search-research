@@ -7,10 +7,18 @@
 namespace symbolic {
 class InfluenceGraph {
     std::vector<std::vector<double>> influence_graph;
+    // Optional (SLBD_BITWIDTH): bits per FD variable. When set, arrangement
+    // distances are measured in binary-variable offsets (the BDD's real
+    // geometry) instead of FD-variable slots.
+    std::vector<int> bit_widths;
 
     double influence(int v1, int v2) const {
         return influence_graph[v1] [v2];
     }
+
+    double eval_bitwidth(
+        const std::vector<int> &order,
+        const std::vector<std::pair<std::pair<int, int>, double>> &edges) const;
 
 
     double optimize_variable_ordering_gamer(std::vector <int> &order,
@@ -38,6 +46,10 @@ public:
     void add_influence(int v1, int v2, double delta) {
         influence_graph[v1][v2] += delta;
         influence_graph[v2][v1] += delta;
+    }
+
+    void set_bit_widths(const std::vector<int> &widths) {
+        bit_widths = widths;
     }
 
     // Collapse all edge weights to 1 (existence only). Reproduces the original
