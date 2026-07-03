@@ -52,11 +52,40 @@ def main():
     ap.add_argument("problem")
     ap.add_argument("--timeout", type=int, default=300)
     ap.add_argument("--memory", type=int, default=4000)
+    ap.add_argument("--presolve", type=int, default=5,
+                    help="run plain GAMER for this many seconds first; only "
+                         "probe+switch if unsolved (0 = always probe)")
     ap.add_argument("--config", action="append", metavar="NAME=SEARCH")
     args = ap.parse_args()
     configs = [c.split("=", 1) for c in (args.config or DEFAULT_CONFIGS)]
 
     t0 = time.time()
+    # Phase 0 (presolve): trivial instances are solved by plain GAMER with
+    # ZERO selector overhead; the probe pipeline only runs on hard instances,
+    # where its few seconds amortize to noise.
+    if args.presolve > 0:
+        wd = tempfile.mkdtemp(prefix="trsel_pre_")
+        cmd = [sys.executable, PLANNER, "--build", "release64",
+               "--overall-time-limit", "%ss" % (args.presolve + 60),
+               "--search-time-limit", "%ss" % args.presolve,
+               "--overall-memory-limit", "%sM" % args.memory,
+               "--plan-file", os.path.join(wd, "sas_plan"),
+               args.domain, args.problem, "--search", "sbd()"]
+        try:
+            out = subprocess.run(
+                cmd, cwd=wd, stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                timeout=args.presolve + 120).stdout.decode("utf-8", "replace")
+        except subprocess.TimeoutExpired:
+            out = ""
+        if "Solution found." in out:
+            wall = time.time() - t0
+            cost = (re.findall(r"Plan cost: (\d+)", out) or ["?"])[0]
+            st = (re.findall(r"Search time: ([0-9.]+)s", out) or ["?"])[0]
+            print("TR_SELECT chosen=causal-presolve solved=1 cost=%s "
+                  "search_time=%ss probe_wall=0.00s search_wall=%.2fs "
+                  "total_wall=%.2fs" % (cost, st, wall, wall))
+            return
     # Phase 1: parallel TR probes.
     probes = []
     for name, search in configs:
