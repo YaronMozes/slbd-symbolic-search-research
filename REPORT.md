@@ -388,16 +388,44 @@ frontier (e.g. blocks). The effect is domain-structural, not universal.
 
 ---
 
-## 8. Why a cheap selector fails (negative result)
+## 8. Selecting the ordering at ~1× CPU: task features fail, build features work
 
-If selection captures −16%, can we pick the right ordering *without* running all
-three (avoiding 3× CPU)? We tested simple setup-time predictors
-(co-occurrence-edge density, mutex-BDD size/reduction). **They fail** — no rule
-beat GAMER (`co-edges/var<5 → constraint-only` gave 1.29; `mutex-reduction<0.3`
-gave 1.00). The relative speed of the orderings is governed by **search dynamics,
-not static structure** (scanalyzer wins at high edge density while depot loses at
-the same density). This mirrors SATzilla's lesson that effective selection needs a
-*learned* model, not hand rules — left as future work.
+If selection captures the oracle, can we pick the right ordering *without*
+running all candidates (avoiding k× CPU)? This took three attempts:
+
+**(a) Task-level features fail.** Simple setup-time predictors
+(co-occurrence-edge density, mutex-BDD size/reduction) never beat GAMER
+(best rule ≥ 1.0): the relative speed of the orderings is governed by search
+dynamics, not task structure (scanalyzer wins at the same edge density where
+depot loses).
+
+**(b) Build-time features succeed.** The feature nobody had measured: the
+**size of the transition relations actually built under each candidate
+ordering** (~1 s to construct, no search; TRs participate in every image
+operation). Offline, `argmin TR-size over {causal, comb-w, constraint-only}`
+scores **0.894 vs always-GAMER** — the first selection rule to beat the
+baseline. It is a weak ranker (≈60 % pairwise concordance) but reliably avoids
+the *catastrophic* orderings. (We also closed the optimizer-convergence
+question: 10× optimization budget changes neither the objective value reached
+nor search time — and over-optimizing the proxy can even grow the real TRs,
+confirming the arrangement objective is only loosely coupled to BDD size.)
+
+**(c) Economics need a presolve schedule.** The naive selector (probe all three,
+then search) makes the *right* choices (+2 coverage in its bench) but pays a
+flat ~2–3 s (probes + repeated translate) that yields **1.49× wall** on the
+trivial instances that dominate benchmarks by count. The deployable version
+(`misc/tests/tr_select.py`) therefore runs **plain GAMER for 5 s first**
+(solving most instances with zero overhead) and only probes+switches on hard
+instances. Final honest bench (sequential, all overhead counted):
+**wall-clock 0.996 vs GAMER overall — parity — and 0.924 (−8 %) on hard
+instances (> 10 s)**, with **+1 coverage** (depot-p04); best domains
+woodworking 0.87, scanalyzer 0.89, depot 0.92; worst transport 1.20.
+
+**Takeaway:** per-instance ordering selection at ~1× CPU is achievable — but
+only from *build-time* evidence (what the BDDs actually look like), not from
+task statistics, and only with amortization-aware scheduling. The k×-CPU
+portfolio remains the stronger (and simpler) option when idle cores exist;
+a learned SATzilla-style model on build features is the natural next step.
 
 ---
 
