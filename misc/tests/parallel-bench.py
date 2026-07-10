@@ -119,6 +119,8 @@ def main():
                     metavar="NAME:KEY=VAL",
                     help="per-config env override, repeatable")
     ap.add_argument("--output", required=True)
+    ap.add_argument("--resume", action="store_true",
+                    help="skip (domain,problem,config) rows already in output")
     args = ap.parse_args()
 
     configs = [c.split("=", 1) for c in args.config]
@@ -131,23 +133,37 @@ def main():
     jobs = [(d, dom, prob, pn, cn, cs, args.timeout, args.memory,
              cfg_env.get(cn, {}))
             for (d, dom, prob, pn) in tasks for (cn, cs) in configs]
-    print("%d tasks x %d configs = %d runs, %d workers, %dMB/run" % (
-        len(tasks), len(configs), len(jobs), args.workers, args.memory))
 
+    already = set()
+    if args.resume and os.path.isfile(args.output):
+        import csv as _csv
+        with open(args.output) as f:
+            for r in _csv.DictReader(f):
+                already.add((r["domain"], r["problem"], r["config"]))
+        jobs = [j for j in jobs if (j[0], j[3], j[4]) not in already]
+    print("%d tasks x %d configs = %d runs (%d skipped via resume), "
+          "%d workers, %dMB/run" % (
+              len(tasks), len(configs), len(jobs), len(already),
+              args.workers, args.memory), flush=True)
+
+    # Incremental, crash-safe CSV: append + flush each finished run.
+    new_file = not (args.resume and os.path.isfile(args.output))
+    out = open(args.output, "w" if new_file else "a")
+    if new_file:
+        out.write("domain,problem,config,solved,cost,search_time,mutex_nodes,"
+                  "sas_vars,co_edges,tr_nodes\n")
+        out.flush()
     rows = []
     done = 0
     with cf.ThreadPoolExecutor(max_workers=args.workers) as ex:
         for r in ex.map(run_one, jobs):
             rows.append(r)
+            out.write(",".join(str(x) for x in r) + "\n")
+            out.flush()
             done += 1
             if done % 20 == 0:
                 print("  %d/%d done" % (done, len(jobs)), flush=True)
-
-    with open(args.output, "w") as f:
-        f.write("domain,problem,config,solved,cost,search_time,mutex_nodes,"
-                "sas_vars,co_edges,tr_nodes\n")
-        for r in rows:
-            f.write(",".join(str(x) for x in r) + "\n")
+    out.close()
     print("Wrote %s" % args.output)
 
     # quick summary: per-domain solved + geomean ratio vs first config
