@@ -23,3 +23,6 @@ src/search/cudd-3.0.0/**/*.la
 src/search/cudd-3.0.0/**/.deps/
 src/search/cudd-3.0.0/**/.libs/
 src/search/cudd-3.0.0/**/.dirstamp
+src/search/cudd-3.0.0/stamp-h1
+src/search/cudd-3.0.0/src/
+src/search/cudd-3.0.0/tmp/
