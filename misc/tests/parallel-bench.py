@@ -23,11 +23,14 @@ PLANNER = os.path.join(REPO, "fast-downward.py")
 
 
 def find_domain_file(ddir, prob):
-    # FD conventions: shared domain.pddl, or per-instance <prefix>-domain.pddl
-    # (e.g. airport: p01-domain.pddl for p01-airport1-p1.pddl), or
-    # domain_<prob>.
+    # FD conventions: shared domain.pddl; per-instance <stem>-domain.pddl
+    # (openstacks/parcprinter: p01-domain.pddl for p01.pddl) or
+    # <prefix>-domain.pddl (airport: p01-domain.pddl for p01-airport1-p1.pddl);
+    # or domain_<prob>.
+    stem = prob[:-len(".pddl")]
     cands = [os.path.join(ddir, "domain.pddl"),
-             os.path.join(ddir, prob.split("-")[0] + "-domain.pddl"),
+             os.path.join(ddir, stem + "-domain.pddl"),
+             os.path.join(ddir, stem.split("-")[0] + "-domain.pddl"),
              os.path.join(ddir, "domain_" + prob)]
     for c in cands:
         if os.path.isfile(c):
