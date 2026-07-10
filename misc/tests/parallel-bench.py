@@ -31,7 +31,8 @@ def find_domain_file(ddir, prob):
     cands = [os.path.join(ddir, "domain.pddl"),
              os.path.join(ddir, stem + "-domain.pddl"),
              os.path.join(ddir, stem.split("-")[0] + "-domain.pddl"),
-             os.path.join(ddir, "domain_" + prob)]
+             os.path.join(ddir, "domain_" + prob),
+             os.path.join(ddir, "domain-" + prob)]
     for c in cands:
         if os.path.isfile(c):
             return c
