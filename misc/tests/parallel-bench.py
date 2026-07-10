@@ -39,16 +39,24 @@ def run_one(job):
     d, dom, prob, pname, cfgname, search, timeout, mem, env_over = job
     workdir = tempfile.mkdtemp(prefix="pbench_")
     plan = os.path.join(workdir, "sas_plan")
-    cmd = [sys.executable, PLANNER, "--build", "release64",
-           "--overall-time-limit", "%ss" % (timeout + 60),
-           "--search-time-limit", "%ss" % timeout,
-           "--overall-memory-limit", "%sM" % mem,
-           "--plan-file", plan, dom, prob, "--search", search]
+    if search == "SELECTOR":
+        # Run the TR-probe selector (a sequential portfolio: presolve ->
+        # sequential probes -> search, all within ONE `timeout` budget).
+        cmd = [sys.executable, os.path.join(HERE, "tr_select.py"), dom, prob,
+               "--timeout", str(timeout), "--memory", str(mem)]
+        subprocess_cap = timeout + 300
+    else:
+        cmd = [sys.executable, PLANNER, "--build", "release64",
+               "--overall-time-limit", "%ss" % (timeout + 60),
+               "--search-time-limit", "%ss" % timeout,
+               "--overall-memory-limit", "%sM" % mem,
+               "--plan-file", plan, dom, prob, "--search", search]
+        subprocess_cap = timeout + 180
     env = dict(os.environ)
     env.update(env_over)
     try:
         out = subprocess.run(cmd, cwd=workdir, stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT, timeout=timeout + 180,
+                             stderr=subprocess.STDOUT, timeout=subprocess_cap,
                              env=env
                              ).stdout.decode("utf-8", "replace")
     except subprocess.TimeoutExpired:

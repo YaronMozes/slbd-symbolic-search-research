@@ -85,18 +85,22 @@ def main():
             print("TR_SELECT chosen=causal-presolve solved=1 cost=%s "
                   "search_time=%ss probe_wall=0.00s search_wall=%.2fs "
                   "total_wall=%.2fs" % (cost, st, wall, wall))
+            # Standard lines so benchmark harnesses can parse this run.
+            print("Plan cost: %s" % cost)
+            print("Search time: %ss" % st)
+            print("Solution found.")
             return
-    # Phase 1: parallel TR probes.
-    probes = []
+    # Phase 1: TR probes — SEQUENTIAL (true single-CPU accounting, so the
+    # whole method is a sequential portfolio in IPC/ICAPS terms). Probe limit
+    # 120s: translate-heavy instances need it; a timed-out probe just means
+    # that candidate is skipped (fallback = causal).
+    sizes = {}
     for name, search in configs:
         wd = tempfile.mkdtemp(prefix="trsel_%s_" % name)
-        p = launch(args.domain, args.problem, search, 60, args.memory,
+        p = launch(args.domain, args.problem, search, 120, args.memory,
                    {"SLBD_TR_PROBE": "1"}, wd)
-        probes.append((name, search, p, wd))
-    sizes = {}
-    for name, search, p, wd in probes:
         try:
-            out = p.communicate(timeout=90)[0].decode("utf-8", "replace")
+            out = p.communicate(timeout=150)[0].decode("utf-8", "replace")
         except subprocess.TimeoutExpired:
             p.kill()
             out = ""
@@ -109,13 +113,16 @@ def main():
     winner = (min(valid, key=valid.get) if valid else configs[0][0])
     search = dict(configs)[winner]
 
-    # Phase 2: full search under the chosen ordering.
+    # Phase 2: full search under the chosen ordering — within the REMAINING
+    # budget (presolve + probes already spent part of args.timeout), so the
+    # whole method fits one IPC-style time limit and the comparison is fair.
     t1 = time.time()
+    budget = max(60, args.timeout - int(time.time() - t0))
     wd = tempfile.mkdtemp(prefix="trsel_run_")
-    p = launch(args.domain, args.problem, search, args.timeout, args.memory,
+    p = launch(args.domain, args.problem, search, budget, args.memory,
                {}, wd)
     try:
-        out = p.communicate(timeout=args.timeout + 120)[0].decode(
+        out = p.communicate(timeout=budget + 120)[0].decode(
             "utf-8", "replace")
     except subprocess.TimeoutExpired:
         p.kill()
@@ -128,6 +135,11 @@ def main():
           "probe_wall=%.2fs search_wall=%.2fs total_wall=%.2fs" %
           (winner, int(solved), cost, st, probe_wall, search_wall,
            probe_wall + search_wall))
+    if solved:
+        # Standard lines so benchmark harnesses can parse this run.
+        print("Plan cost: %s" % cost)
+        print("Search time: %ss" % st)
+        print("Solution found.")
 
 
 if __name__ == "__main__":
