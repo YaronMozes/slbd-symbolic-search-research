@@ -22,16 +22,36 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 PLANNER = os.path.join(REPO, "fast-downward.py")
 
 
+def find_domain_file(ddir, prob):
+    # FD conventions: shared domain.pddl, or per-instance <prefix>-domain.pddl
+    # (e.g. airport: p01-domain.pddl for p01-airport1-p1.pddl), or
+    # domain_<prob>.
+    cands = [os.path.join(ddir, "domain.pddl"),
+             os.path.join(ddir, prob.split("-")[0] + "-domain.pddl"),
+             os.path.join(ddir, "domain_" + prob)]
+    for c in cands:
+        if os.path.isfile(c):
+            return c
+    return None
+
+
 def discover(bench, domains, n):
     tasks = []
     for d in domains:
-        dom = os.path.join(bench, d, "domain.pddl")
-        if not os.path.isfile(dom):
+        ddir = os.path.join(bench, d)
+        if not os.path.isdir(ddir):
             continue
-        probs = sorted(f for f in os.listdir(os.path.join(bench, d))
-                       if f.endswith(".pddl") and f != "domain.pddl")
-        for p in probs[:n]:
-            tasks.append((d, dom, os.path.join(bench, d, p), p))
+        probs = sorted(f for f in os.listdir(ddir)
+                       if f.endswith(".pddl") and "domain" not in f)
+        count = 0
+        for p in probs:
+            if count >= n:
+                break
+            dom = find_domain_file(ddir, p)
+            if dom is None:
+                continue
+            tasks.append((d, dom, os.path.join(ddir, p), p))
+            count += 1
     return tasks
 
 
