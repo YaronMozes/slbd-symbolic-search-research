@@ -8,3 +8,18 @@ __pycache__/
 /slbd-comparison-logs/
 /slbd-results/
 /slbd-validation-*.log
+
+# CUDD builds in-tree; ignore its build artifacts
+src/search/cudd-3.0.0/autom4te.cache/
+src/search/cudd-3.0.0/config.h
+src/search/cudd-3.0.0/config.log
+src/search/cudd-3.0.0/config.status
+src/search/cudd-3.0.0/Makefile
+src/search/cudd-3.0.0/libtool
+src/search/cudd-3.0.0/*~
+src/search/cudd-3.0.0/**/*.o
+src/search/cudd-3.0.0/**/*.lo
+src/search/cudd-3.0.0/**/*.la
+src/search/cudd-3.0.0/**/.deps/
+src/search/cudd-3.0.0/**/.libs/
+src/search/cudd-3.0.0/**/.dirstamp
