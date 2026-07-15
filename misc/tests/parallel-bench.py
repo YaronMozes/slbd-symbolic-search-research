@@ -69,6 +69,19 @@ def run_one(job):
         cmd = [sys.executable, os.path.join(HERE, "tr_select.py"), dom, prob,
                "--timeout", str(timeout), "--memory", str(mem)]
         subprocess_cap = timeout + 300
+    elif search == "SYMK":
+        # External SoTA baseline: SymK (IPC-2023 planner3), blind symbolic
+        # bidirectional search (sym-bd) -- the algorithmic analog of our sbd().
+        # Same time+memory budget as our runs for a fair comparison; SymK's own
+        # default build. Its success line is "Solutions found." (plural).
+        symk = os.path.expanduser("~/symk-ipc2023/fast-downward.py")
+        cmd = [sys.executable, symk,
+               "--overall-time-limit", "%ss" % (timeout + 60),
+               "--search-time-limit", "%ss" % timeout,
+               "--overall-memory-limit", "%sM" % mem,
+               "--plan-file", plan, dom, prob,
+               "--search", "sym-bd(silent=true)"]
+        subprocess_cap = timeout + 180
     else:
         cmd = [sys.executable, PLANNER, "--build", "release64",
                "--overall-time-limit", "%ss" % (timeout + 60),
@@ -95,7 +108,7 @@ def run_one(job):
             os.rmdir(workdir)
         except OSError:
             pass
-    solved = 1 if "Solution found." in out else 0
+    solved = 1 if ("Solution found." in out or "Solutions found." in out) else 0
     cost = (re.findall(r"Plan cost: (\d+)", out) or [""])[0]
     st = (re.findall(r"Search time: ([0-9.]+)s", out) or [""])[0]
     mx = (re.findall(r"MUTEX_BDD_SIZE:.*total_nodes=(\d+)", out) or [""])[0]
