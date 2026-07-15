@@ -189,7 +189,9 @@ def main():
     cfgnames = [c[0] for c in configs]
     base = cfgnames[0]
     by = {}
-    for (d, pn, cn, s, cost, st, mx, tv, ce, tr) in rows:
+    for row in rows:
+        # width-robust: summary only needs domain, problem, config, solved, search_time
+        d, pn, cn, s, st = row[0], row[1], row[2], row[3], row[5]
         by.setdefault((d, pn), {})[cn] = (s, st)
     print("\nPer-domain: solved counts and geomean search-time ratio vs %s" % base)
     domains = sorted(set(d for (d, _) in by))
