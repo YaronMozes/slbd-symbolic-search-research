@@ -51,7 +51,10 @@ namespace symbolic {
 	//SymStepCostEstimation estimationDisjCost, estimationDisjZero;
 	bool lastStepCost; //If the last step was a cost step (to know if we are in estimationDisjCost or Zero)
 
-	SymExpStatistics stats;
+	// Statistics counters live in the base class (UnidirectionalSearch::stats).
+	// A second `SymExpStatistics stats;` here previously shadowed the base member:
+	// stepImage() updated this copy while statistics() printed the (never-written)
+	// base copy, so every log reported "0 steps". Removed to use the inherited counters.
 
 	virtual bool initialization() const {
 	    return frontier.g()==0 && lastStepCost;

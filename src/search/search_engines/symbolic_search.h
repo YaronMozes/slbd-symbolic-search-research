@@ -35,6 +35,8 @@ namespace symbolic_search {
 	virtual ~SymbolicSearch() = default;
 
 	virtual void new_solution(const symbolic::SymSolution & sol) override;
+
+	virtual void print_statistics() const override;
     };
 
 

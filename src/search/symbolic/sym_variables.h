@@ -138,6 +138,10 @@ public:
         return _manager->ReadNodeCount();
     }
 
+    inline long peakNodes() const {
+        return _manager->ReadPeakNodeCount();
+    }
+
     inline std::vector <BDD> getBDDVarsPre() const {
         return getBDDVars(var_order, bdd_index_pre);
     }

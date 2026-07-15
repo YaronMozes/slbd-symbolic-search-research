@@ -102,7 +102,22 @@ def run_one(job):
     tv = (re.findall(r"Translator variables: (\d+)", out) or [""])[0]
     ce = (re.findall(r"co_occurrence_edges_added=(\d+)", out) or [""])[0]
     tr = (re.findall(r"TR_SIZE:.*total_nodes=(\d+)", out) or [""])[0]
-    return (d, pname, cfgname, solved, cost, st, mx, tv, ce, tr)
+    # SEARCH_STATS: fields (added by SymbolicSearch::print_statistics).
+    # Expanded-state counts come from BDD model counting -> can be ~1e18, keep as
+    # float text (accept scientific notation); node counts are plain ints.
+    fx = (re.findall(r"fw_expanded_states=([0-9.eE+]+)", out) or [""])[0]
+    bx = (re.findall(r"bw_expanded_states=([0-9.eE+]+)", out) or [""])[0]
+    fcn = (re.findall(r"fw_closed_nodes=(\d+)", out) or [""])[0]
+    bcn = (re.findall(r"bw_closed_nodes=(\d+)", out) or [""])[0]
+    pk = (re.findall(r"peak_bdd_nodes=(\d+)", out) or [""])[0]
+    fbn = (re.findall(r"final_bdd_nodes=(\d+)", out) or [""])[0]
+    # Per-direction image/step counts from "Exp fw time: ... in N steps (M truncated)".
+    fws = (re.findall(r"Exp fw time:.*? in (\d+) steps", out) or [""])[0]
+    bws = (re.findall(r"Exp bw time:.*? in (\d+) steps", out) or [""])[0]
+    fwt = (re.findall(r"Exp fw time:.*?\((\d+) truncated\)", out) or [""])[0]
+    bwt = (re.findall(r"Exp bw time:.*?\((\d+) truncated\)", out) or [""])[0]
+    return (d, pname, cfgname, solved, cost, st, mx, tv, ce, tr,
+            fx, bx, fcn, bcn, pk, fbn, fws, bws, fwt, bwt)
 
 
 def main():
@@ -151,7 +166,10 @@ def main():
     out = open(args.output, "w" if new_file else "a")
     if new_file:
         out.write("domain,problem,config,solved,cost,search_time,mutex_nodes,"
-                  "sas_vars,co_edges,tr_nodes\n")
+                  "sas_vars,co_edges,tr_nodes,"
+                  "fw_expanded,bw_expanded,fw_closed_nodes,bw_closed_nodes,"
+                  "peak_bdd_nodes,final_bdd_nodes,"
+                  "fw_steps,bw_steps,fw_truncated,bw_truncated\n")
         out.flush()
     rows = []
     done = 0

@@ -30,6 +30,6 @@ namespace symbolic {
     void UnidirectionalSearch::statistics() const {
 	cout << "Exp " << (fw ? "fw" : "bw") << " time: " << stats.step_time << "s (img:" <<
 	    stats.image_time << "s, heur: " << stats.time_heuristic_evaluation <<
-	    "s) in " << stats.num_steps_succeeded << " steps ";
+	    "s) in " << stats.num_steps_succeeded << " steps (" << stats.num_steps_truncated << " truncated) ";
     }
 }

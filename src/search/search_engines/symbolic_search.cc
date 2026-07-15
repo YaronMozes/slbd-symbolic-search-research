@@ -88,6 +88,30 @@ namespace symbolic_search {
 
 	SymController::new_solution(sol);
     }
+
+    void SymbolicSearch::print_statistics() const {
+	SearchEngine::print_statistics(); // keeps the "Bytes per state:" line
+	if (!search) {
+	    return;
+	}
+	// Per-direction image/step counts (now correct after the stats-shadowing fix):
+	// prints "Exp fw time: ... in N steps (M truncated)" for each active direction.
+	search->statistics();
+	cout << endl;
+
+	// State-level effort (via BDD model counting) + representation size.
+	// numStates() returns a double and can reach ~1e18 -> parse as float downstream.
+	BDD fw_closed = search->get_seen_states(true);
+	BDD bw_closed = search->get_seen_states(false);
+	cout << "SEARCH_STATS:"
+	     << " fw_expanded_states=" << vars->numStates(fw_closed)
+	     << " bw_expanded_states=" << vars->numStates(bw_closed)
+	     << " fw_closed_nodes=" << fw_closed.nodeCount()
+	     << " bw_closed_nodes=" << bw_closed.nodeCount()
+	     << " peak_bdd_nodes=" << vars->peakNodes()
+	     << " final_bdd_nodes=" << vars->totalNodes()
+	     << endl;
+    }
 }
 
 static SearchEngine *_parse_bidirectional_ucs(OptionParser &parser) {

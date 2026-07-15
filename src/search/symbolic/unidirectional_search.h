@@ -18,12 +18,13 @@ namespace symbolic {
 	double image_time, image_time_failed;
 	double time_heuristic_evaluation;
 	int num_steps_succeeded;
+	int num_steps_truncated;
 	double step_time;
 
     SymExpStatistics() :
         image_time(0),
 	    image_time_failed(0), time_heuristic_evaluation(0),
-	    num_steps_succeeded(0), step_time(0) {  }
+	    num_steps_succeeded(0), num_steps_truncated(0), step_time(0) {  }
 
 
 	void add_image_time(double t) {
