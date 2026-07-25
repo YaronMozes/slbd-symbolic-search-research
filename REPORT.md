@@ -128,7 +128,9 @@ instantiation and its evaluation.
 Two independent full-suite runs showed replicated per-domain effects (gains on
 parking-opt14 +3/+3, barman-opt11 +1/+2, tpp +1/+1; a Bonferroni-surviving
 woodworking speedup at weight 2 with a monotone dose–response: w=0.5 → 0.87,
-w=1 → 0.84, **w=2 → 0.586**, p = 5.7·10⁻⁶; and replicated *losses* on freecell
+w=1 → 0.84, **w=2 → 0.586**, faster on 38/47, significant under every standard
+paired test (exact Wilcoxon p = 4·10⁻⁷, sign test p = 2.5·10⁻⁵) and
+comfortably Bonferroni-surviving; and replicated *losses* on freecell
 and tetris). This motivates a **per-domain policy**: enable the ordering (with
 per-domain weight) on the five signal domains; stock SymK elsewhere.
 
@@ -159,8 +161,8 @@ Full suite, corrected data (after repairing a harness defect, §9): coverage
 delta (−6) is well inside the measured ±17 replicate floor; on the 1,617
 instances untouched by the harness defect the discordant pairs are 12 gains vs
 14 losses (exact sign test p = 0.85). Runtime on commonly solved instances:
-**geomean and median exactly 1.0000**, domain-clustered 95 % CI **[0.96, 1.05]**
-— a bounded zero, not an absence of evidence. A seed control shows the
+**geomean 1.00 (0.998), median exactly 1.000**, domain-clustered 95 % CI
+**[0.96, 1.05]** — a bounded zero, not an absence of evidence. A seed control shows the
 perturbation is real but unbiased: sd(log time-ratio) = 0.44 against a
 0.20–0.23 same-config noise floor. The largest reproducible single effects are
 *against* the always-on ordering (freecell 25→20, replicated; floortile ~1.56×
@@ -178,10 +180,12 @@ From the instrumented planner (both orderings, per-instance BDD statistics):
   median 1.000, p = 0.12 (n = 759).
 - **TR size is a bad proxy; peak size is the operative quantity**:
   ρ(log TR-ratio, log time-ratio) = 0.202 (R² ≈ 0.04) vs
-  ρ(log peak-ratio, log time-ratio) = **0.593** (p ≈ 2·10⁻⁶⁹).
+  ρ(log peak-ratio, log time-ratio) = **0.593** (p ≈ 2·10⁻⁶⁹), computed on
+  the 718 active instances whose TR changed (0.199 / 0.580 on all 759 — same
+  conclusion).
 - The suite-wide sign is explained by **asymmetry**: the ordering grows the TR
   on 36.7 % of active instances (median growth 1.20×), and growth costs more
-  (time ratio 1.211) than shrinkage saves (0.945).
+  (time ratio 1.211) than shrinkage saves (0.946).
 - **Scope**: the method is a literal no-op on 25.6 % of instances (no
   cross-variable mutex groups; 13 of 66 domains).
 
