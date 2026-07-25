@@ -38,3 +38,25 @@ observations to a proven claim or demotes them to "suggestive".
 
 No other endpoints will be claimed from this data. Analysis script committed
 alongside; results land in `slbd-results/ab-policy.csv` on the server.
+
+---
+## RESULTS (2026-07-25, gates applied exactly as registered — analysis unchanged)
+
+- **GATE 4 integrity: PASS** — 0 cost mismatches on all commonly-solved pairs.
+- **GATE 1 PRIMARY: CONFIRMED** — coverage contrast **+6 in replicate 1 and +6 in
+  replicate 2** (average +6.0 ≥ +4). Per-domain, policy − stock:
+  parking-opt14 +2/+3, barman-opt11 +1/+2, tpp +1/+1, woodworking-opt08 +1/+0,
+  woodworking-opt11 +1/+0. No negative cell anywhere.
+- **GATE 2 SECONDARY: CONFIRMED** — woodworking wall geomean policy/stock =
+  **0.647** (n=94 commonly-solved pairs, policy faster on 70/94) ≤ 0.85.
+- **GATE 3 GUARD: PASS** — zero per-domain net losses in any replicate.
+
+**Confirmed claim:** the per-domain constraint-ordering policy improves stock
+SymK (IPC-2023) by **+6 coverage** on the five signal domains (exactly
+replicated across two interleaved replicates) and accelerates woodworking by
+**~1.55×**, with optimality preserved. Suite-wide, the policy equals stock on
+all other domains by construction.
+
+**fix7-corrected grand-run absolutes** (230 repaired instances merged):
+stock 1145 / always-on 1139 / selector 1150, of 1847. The suite-wide null for
+the always-on ordering is unchanged (−6, within the ±17 replicate floor).
