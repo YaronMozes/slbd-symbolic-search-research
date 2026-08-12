@@ -47,8 +47,10 @@ Cost-optimal classical planning asks for provably cheapest plans. Symbolic
 search explores sets of states represented as binary decision diagrams (BDDs);
 its runtime and memory are dominated by BDD sizes, and BDD sizes depend —
 sometimes exponentially — on the variable ordering. The orderings used in
-practice (GAMER and descendants, inherited unchanged by SymK, the IPC-2023
-winner) optimize a causal-graph proximity objective.
+practice (GAMER and descendants, inherited unchanged by SymK — a
+state-of-the-art symbolic planner and the symbolic component of Ragnarok, the
+winner of the IPC-2023 optimal track) optimize a causal-graph proximity
+objective.
 
 These planners also exploit state invariants: h² mutexes and exactly-one groups
 are compiled into constraint BDDs that participate in every search step. The
@@ -256,7 +258,7 @@ sequential portfolios, the frame for our selector/policy discussion.
 We set out to improve symbolic search and, after falsifying our own first
 hypothesis and one popular implicit assumption (that TR size is a good ordering
 target), we end with: a **confirmed, pre-registered per-domain improvement to
-the IPC-2023 state of the art** (+6 coverage replicated; 1.55× woodworking); a
+a state-of-the-art symbolic planner** (+6 coverage replicated; 1.55× woodworking); a
 **bounded suite-wide null** for the always-on variant with its **measured
 mechanism**; **ceiling bounds** closing the obvious rescue attempts; and
 **methodological artifacts** (noise floors, regression-to-the-mean controls,
