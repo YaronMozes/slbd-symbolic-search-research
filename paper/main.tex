@@ -236,7 +236,10 @@ This caps the total accumulated influence weight contributed by any single invar
 \label{sec:skipcausal}
 In domains with dense causal topologies (e.g., \textit{blocks-world}, where any block can interact with any other), almost every constraint pair $(v_i, v_j) \in E_{\text{constraint}}$ is already connected in $E_{\text{causal}}$. Over-constraining these pairs tightens the variable ordering excessively, restricting local search freedom and degrading search performance. We introduce an optional filtering predicate $\text{SkipCausal}(v_i, v_j)$:
 \begin{equation*}
-    \text{SkipCausal}(v_i, v_j) = \mathbb{I}\left( (v_i, v_j) \in E_{\text{causal}} \lor (v_j, v_i) \in E_{\text{causal}} \right)
+\begin{aligned}
+    \text{SkipCausal}(v_i, v_j) = \mathbb{I}\bigl( &(v_i, v_j) \in E_{\text{causal}} \\
+    &\lor\; (v_j, v_i) \in E_{\text{causal}} \bigr)
+\end{aligned}
 \end{equation*}
 When enabled, constraint edges that duplicate existing causal graph adjacencies are discarded, preserving long-range constraint edges that assist sparse domains (e.g., \textit{depot}).
 
@@ -290,11 +293,11 @@ We repaired the objective function and the incremental swap delta evaluation loo
     \mathcal{J}(\pi) = \sum_{1 \le p_a < p_b \le |\mathcal{V}|} w\left(\pi(p_a), \pi(p_b)\right) \cdot (p_b - p_a)^2
     \label{eq:repaired_obj}
 \end{equation}
-When proposing a candidate swap between positions $p_1$ and $p_2$ (with $p_1 \neq p_2$), the change in objective value $\Delta \mathcal{J}(p_1, p_2)$ is computed incrementally in $\mathcal{O}(|\mathcal{V}|)$ time:
+When proposing a candidate swap between positions $p_1$ and $p_2$ (with $p_1 \neq p_2$), write $w_{k,i} \coloneqq w\bigl(\pi(k), \pi(p_i)\bigr)$ for the weight between the variable at position $k$ and the variable at swap position $p_i$. The change in objective value $\Delta \mathcal{J}(p_1, p_2)$ is then computed incrementally in $\mathcal{O}(|\mathcal{V}|)$ time:
 \begin{equation}
 \begin{aligned}
-    &\ \Delta \mathcal{J}(p_1, p_2) = \sum_{k \neq p_1, p_2} w\left(\pi(k), \pi(p_1)\right) \left[ (k - p_2)^2 - (k - p_1)^2 \right] \\
-    &\ + w\left(\pi(k), \pi(p_2)\right) \left[ (k - p_1)^2 - (k - p_2)^2 \right]
+    \Delta \mathcal{J}(p_1, p_2) = \sum_{k \neq p_1, p_2} \Bigl[ \; &w_{k,1}\bigl( (k - p_2)^2 - (k - p_1)^2 \bigr) \\
+    + \; &w_{k,2}\bigl( (k - p_1)^2 - (k - p_2)^2 \bigr) \Bigr]
 \end{aligned}
 \label{eq:swap_delta}
 \end{equation}
