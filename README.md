@@ -1,45 +1,97 @@
-Fast Downward is a domain-independent planning system.
+# Constraint-Aware Variable Ordering in Symbolic Optimal Planning
 
-For documentation and contact information see http://www.fast-downward.org/.
+Research code and data for a course project at the Technion (Faculty of Data and
+Decision Sciences) by **Yaron Mozes** and **Galit Kadzelshvily**.
 
-The following directories are not part of Fast Downward as covered by this
-license:
+**Paper: [`paper/main.pdf`](paper/main.pdf)** (sources: [`paper/main.tex`](paper/main.tex))
 
-* ./src/search/ext
+## What this is
 
-For the rest, the following license applies:
+Symbolic (BDD-based) search is a leading approach to cost-optimal classical
+planning, and its cost is dominated by BDD size — which depends critically on the
+*variable ordering*. The GAMER-family ordering used by state-of-the-art planners
+optimizes causal-graph proximity only. Torralba and Alcázar (SoCS 2013) observed
+that the mutex/invariant **constraint BDDs** conjoined into every search step also
+depend on that ordering, and proposed optimizing for them as future work.
 
+This repository implements and evaluates exactly that idea — mutex and
+exactly-one invariant **co-occurrence edges** added to the ordering objective —
+inside **SymK**, on the complete IPC optimal-STRIPS suite (66 domains, 1,847
+instances) at 1800 s / 8 GB / 1 CPU per task.
+
+## Results in one paragraph
+
+A **pre-registered**, double-replicated A/B study shows that a *per-domain policy*
+(the ordering enabled on five signal domains, stock SymK elsewhere) improves stock
+SymK by **+6 coverage — exactly +6 in both replicates** — and accelerates
+*woodworking* by **1.55×**, with zero plan-cost mismatches. Enabled *universally*,
+however, the ordering is a **tightly bounded null** (coverage 1145 vs 1139; wall
+ratio geomean 1.005, 95 % CI [0.97, 1.05]). Instrumentation explains why: the
+ordering reliably shrinks **transition relations** (geomean 0.867, p ≈ 3·10⁻²¹) but
+TR size is a poor proxy for runtime (ρ = 0.202, R² ≈ 0.04), while **peak
+search-BDD size** — which the ordering leaves unchanged — is the operative
+quantity (ρ = 0.593). We also report empirical ceiling bounds on selection and
+restart wrappers, and four methodological findings (regression-to-the-mean in
+"hard instance" subsets, cross-year IPC duplicate leakage, small-sample optimism,
+and a silent harness defect caught by cross-planner cost agreement).
+
+**Scope, stated plainly:** the confirmed improvement covers five of 66 IPC domains;
+suite-wide the method is a measured zero. Both are reported.
+
+## Repository map
+
+### The method
+| Path | Contents |
+|---|---|
+| [`symk-patch/`](symk-patch/) | **The final method**, as deployed in SymK: constraint co-occurrence edges + the weight-aware objective repair (`opt_order.cc`, `opt_order.h`) |
+| [`src/search/symbolic/opt_order.{cc,h}`](src/search/symbolic/) | The same method in our research fork, with all ablation switches |
+| [`src/search/symbolic/sym_variables.cc`](src/search/symbolic/) | Option plumbing (`constraint_order`, `co_weight`, `constraint_only`) |
+| [`src/search/symbolic/original_state_space.cc`](src/search/symbolic/) | Diagnostics: `MUTEX_BDD_SIZE`, `TR_SIZE`, probe mode |
+
+### The experiments
+| Path | Contents |
+|---|---|
+| [`PREREG-ab-policy.md`](PREREG-ab-policy.md) | **Pre-registration** — design and gates, committed *before* the data existed, with outcomes appended |
+| [`misc/tests/ab_policy.py`](misc/tests/ab_policy.py) | The per-domain policy (`SIGNAL_DOMAINS`) + the confirmatory A/B driver |
+| [`misc/tests/symk_sel_bench.py`](misc/tests/symk_sel_bench.py) | Full-suite SymK driver (includes the repaired domain-file pairing) |
+| [`misc/tests/parallel-bench.py`](misc/tests/parallel-bench.py) | Parallel benchmark runner (crash-safe, resumable) |
+| [`misc/tests/tr_select.py`](misc/tests/tr_select.py), [`tr_select_symk.py`](misc/tests/tr_select_symk.py) | The TR-probe selector studied in the ceiling-bounds section |
+| [`data/`](data/) | **The result CSVs behind every claim**, with a column guide and merge instructions |
+| [`RESEARCH_NOTES.md`](RESEARCH_NOTES.md) | Full lab notebook, including the ideas that failed |
+
+## Reproducing
+
+```bash
+python3 build.py release64          # add -DUSE_LP=NO if COIN-OR linking fails
 ```
-Copyright (C) 2003-2016 Malte Helmert
-Copyright (C) 2008-2016 Gabriele Roeger
-Copyright (C) 2010-2016 Jendrik Seipp
-Copyright (C) 2010, 2011, 2013-2016 Silvan Sievers
-Copyright (C) 2012-2016 Florian Pommerening
-Copyright (C) 2016 Martin Wehrle
-Copyright (C) 2013, 2015 Salome Simon
-Copyright (C) 2014, 2015 Patrick von Reth
-Copyright (C) 2015 Manuel Heusner, Thomas Keller
-Copyright (C) 2009-2014 Erez Karpas
-Copyright (C) 2014 Robert P. Goldman
-Copyright (C) 2010-2012 Andrew Coles
-Copyright (C) 2010, 2012 Patrik Haslum
-Copyright (C) 2003-2011 Silvia Richter
-Copyright (C) 2009-2011 Emil Keyder
-Copyright (C) 2010, 2011 Moritz Gronbach, Manuela Ortlieb
-Copyright (C) 2011 Vidal Alcázar Saiz, Michael Katz, Raz Nissim
-Copyright (C) 2010 Moritz Goebelbecker
-Copyright (C) 2007-2009 Matthias Westphal
-Copyright (C) 2009 Christian Muise
 
-Fast Downward is free software: you can redistribute it and/or modify it under
-the terms of the GNU General Public License as published by the Free Software
-Foundation, either version 3 of the License, or (at your option) any later
-version.
+Our fork:
 
-Fast Downward is distributed in the hope that it will be useful, but WITHOUT ANY
-WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License along with
-this program. If not, see <http://www.gnu.org/licenses/>.
+```bash
+./fast-downward.py DOMAIN.pddl PROBLEM.pddl --search "sbd(constraint_order=true, co_weight=2.0)"
 ```
+
+SymK with the patch (env-var controlled): apply `symk-patch/` over stock SymK, then
+
+```bash
+SLBD_CONSTRAINT_ORDER=1 SLBD_CO_WEIGHT=2.0 \
+  ./fast-downward.py DOMAIN.pddl PROBLEM.pddl --search "sym-bd()"
+```
+
+The confirmed policy uses the base weight directly — group-size normalization
+(`SLBD_CO_NORM`) and causal-edge skipping (`SLBD_CO_SKIP_CAUSAL`) are optional
+ablations and are **disabled** in it. Benchmarks come from
+[aibasel/downward-benchmarks](https://github.com/aibasel/downward-benchmarks).
+
+## Attribution and license
+
+This is a fork of **[Torralba's symbolic Fast Downward](https://gitlab.com/atorralba/fast-downward-symbolic)**,
+itself derived from **[Fast Downward](http://www.fast-downward.org/)** — see
+[`README-fast-downward.md`](README-fast-downward.md) for the upstream copyright
+notice and the **GNU GPL v3** terms, which apply to this repository. The files in
+[`symk-patch/`](symk-patch/) are modifications of **[SymK](https://github.com/speckdavid/symk)**
+(David Speck et al., also GPL v3) and are redistributed under the same license.
+Our own contributions are released under GPL v3 as well.
+
+Please cite the original authors for the planners; this repository only adds the
+constraint-aware ordering, its evaluation, and the analysis reported in the paper.

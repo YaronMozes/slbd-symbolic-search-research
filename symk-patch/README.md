@@ -23,6 +23,14 @@ all other domains). Experiment drivers: `misc/tests/symk_sel_bench.py`
 (full-suite runs; includes the repaired domain-file pairing),
 `misc/tests/tr_select_symk.py` (the TR-probe selector studied in §8).
 
+## License
+
+These files are **modifications of [SymK](https://github.com/speckdavid/symk)**
+(David Speck et al.), which is distributed under the **GNU GPL v3**; they are
+redistributed here under the same license. They are not standalone — they replace
+the corresponding files in a stock SymK checkout. Please cite SymK for the planner
+itself.
+
 Note: the server copy of SymK additionally carries `TR_SIZE`/probe diagnostics
 in `original_state_space.cc` (instrumentation only — no behavioural change);
 authoritative copies live on the lab server and in the laptop backup
