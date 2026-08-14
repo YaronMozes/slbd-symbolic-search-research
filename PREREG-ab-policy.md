@@ -36,8 +36,14 @@ observations to a proven claim or demotes them to "suggestive".
 4. **Cost integrity:** any cost mismatch between arms on a commonly-solved
    instance voids the experiment (expected: zero).
 
-No other endpoints will be claimed from this data. Analysis script committed
-alongside; results land in `slbd-results/ab-policy.csv` on the server.
+No other endpoints will be claimed from this data; results land in
+`slbd-results/ab-policy.csv` on the server. (Correction, added with the
+results: no analysis script was committed alongside this document, contrary
+to an earlier wording here. The gates above are computed by
+`misc/analysis/check_gates.py`, added later. This document was pushed
+publicly ~16 h before the results commit and its gates were never edited,
+which fixes the criteria publicly in advance but does not by itself prove
+the runs had not started.)
 
 ---
 ## RESULTS (2026-07-25, gates applied exactly as registered — analysis unchanged)
