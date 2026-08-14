@@ -1,6 +1,16 @@
 #!/usr/bin/env python3
 """Pre-registered per-domain ordering-policy A/B (see PREREG-ab-policy.md).
 
+KNOWN LIMITATIONS of this driver, as released (noted after an external audit;
+the published data/ab-policy.csv was produced by exactly this version):
+  * The queue always emits `stock` before `policy` for a given instance. This
+    keeps the two arms adjacent under similar load but does NOT counterbalance
+    order; a rerun should alternate which arm goes first across replicates.
+  * The child environment is inherited, so SLBD_CO_NORM / SLBD_CO_SKIP_CAUSAL /
+    SLBD_CO_ONLY are only guaranteed unset if the launching shell is clean.
+    They were unset for the released runs; a rerun should clear them explicitly.
+
+
 stock vs policy (constraint ordering, per-domain weight), 2 replicates,
 stock/policy for the same instance ADJACENT in the queue (contention-symmetric).
 Crash-safe: --resume skips completed (domain,problem,config,rep) rows.
