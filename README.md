@@ -2,7 +2,7 @@
 
 Research code and data for the final project in *Artificial Intelligence and
 Autonomous Systems* (00960208) at the Technion, Faculty of Data and Decision
-Sciences, by **Yaron Mozes** and **Galit Kadzelshvily**.
+Sciences, by **Yaron Mozes** and **Galit Kadzelashvily**.
 
 **Paper: [`paper/main.pdf`](paper/main.pdf)** (sources: [`paper/main.tex`](paper/main.tex))
 
