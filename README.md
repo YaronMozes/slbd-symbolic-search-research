@@ -1,7 +1,8 @@
 # Constraint-Aware Variable Ordering in Symbolic Optimal Planning
 
-Research code and data for a course project at the Technion (Faculty of Data and
-Decision Sciences) by **Yaron Mozes** and **Galit Kadzelshvily**.
+Research code and data for the final project in *Artificial Intelligence and
+Autonomous Systems* (00960208) at the Technion, Faculty of Data and Decision
+Sciences, by **Yaron Mozes** and **Galit Kadzelshvily**.
 
 **Paper: [`paper/main.pdf`](paper/main.pdf)** (sources: [`paper/main.tex`](paper/main.tex))
 
@@ -31,9 +32,9 @@ ordering reliably shrinks **transition relations** (geomean 0.867, p ≈ 3·10�
 TR size is a poor proxy for runtime (ρ = 0.202, R² ≈ 0.04), while **peak
 search-BDD size** — which the ordering leaves unchanged — is the operative
 quantity (ρ = 0.593). We also report empirical ceiling bounds on selection and
-restart wrappers, and four methodological findings (regression-to-the-mean in
-"hard instance" subsets, cross-year IPC duplicate leakage, small-sample optimism,
-and a silent harness defect caught by cross-planner cost agreement).
+restart wrappers, and two methodological findings: regression-to-the-mean in
+"hard instance" subsets, and cross-year duplicate instances in the IPC suite
+(322 of the 1,847 evaluated instances) that break domain-wise cross-validation.
 
 **Scope, stated plainly:** the confirmed improvement covers five of 66 IPC domains;
 suite-wide the method is a measured zero. Both are reported.
@@ -58,6 +59,9 @@ suite-wide the method is a measured zero. Both are reported.
 | [`misc/tests/tr_select.py`](misc/tests/tr_select.py), [`tr_select_symk.py`](misc/tests/tr_select_symk.py) | The TR-probe selector studied in the ceiling-bounds section |
 | [`data/`](data/) | **The result CSVs behind every claim**, with a column guide and merge instructions |
 | [`RESEARCH_NOTES.md`](RESEARCH_NOTES.md) | Full lab notebook, including the ideas that failed |
+
+The paper in [`paper/`](paper/) is the report of record; `RESEARCH_NOTES.md` is
+the working notebook behind it.
 
 ## Reproducing
 

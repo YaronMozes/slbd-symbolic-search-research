@@ -1,7 +1,7 @@
 # SymK patch: constraint-aware variable ordering (the final method)
 
 These files apply over **stock SymK (IPC-2023)** — `src/search/symbolic/` — and
-contain the complete final method as evaluated in `REPORT.md`:
+contain the complete final method as evaluated in [`../paper/main.pdf`](../paper/main.pdf):
 
 - **`opt_order.cc`** — THE method. Two changes vs stock:
   1. After GAMER's causal-graph edges, adds influence edges between every pair
