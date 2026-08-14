@@ -175,12 +175,14 @@ To map $\text{SAS}^+$ variables to Boolean BDD variables, each $v_i \in \mathcal
 A \textbf{variable ordering} $\pi$ is a bijection $\pi: X \cup X' \to \{1, \dots, 2M\}$ specifying the linear topological sequence in which Boolean variables are evaluated along all root-to-leaf paths in the BDD.
 \end{tcolorbox}
 
+In practice the search is over a coarser space: the optimizer permutes the $n$ $\text{SAS}^+$ variables, and each variable's $m_i$ bits -- interleaved with their primed counterparts -- occupy a contiguous block of the induced Boolean order. All objectives below are therefore stated over $\text{SAS}^+$ variable positions.
+
 In symbolic uniform-cost search (e.g., \textsf{sym-bd} in \textsf{SymK}) \cite{speck2020symk, torralba2014symba}, forward search expands a frontier BDD $F_k(X)$ at cost level $k$ through a \emph{relational product} (image computation). Writing the constraint restriction explicitly, the reachable successor set at level $k+1$ is \cite{torralba2013constrained}:
 \begin{equation}
     F_{k+1}(X') = \exists X \left( F_k(X) \land T(X, X') \right) \land C(X')
     \label{eq:image_comp}
 \end{equation}
-where $T(X, X') = \bigvee_{a \in \mathcal{A}} T_a(X, X')$ represents the system transition relation, and $C(X')$ is the conjoined invariant constraint BDD compiling all $h^2$ mutexes and exactly-one groups \cite{torralba2013constrained}:
+where $T(X, X') = \bigvee_{a \in \mathcal{A}} T_a(X, X')$ represents the system transition relation, and $C(X')$ is the invariant constraint characterising valid states, compiling all $h^2$ mutexes and exactly-one groups \cite{torralba2013constrained}:
 \begin{equation}
 \begin{aligned}
     C(X) = &\left( \textstyle\bigwedge_{\mu \in M_{h^2}} \neg \mu(X) \right) \;\land \\
@@ -214,7 +216,7 @@ where $\lambda \in \mathbb{R}_{\ge 0}$ parameterizes the relative weight of inva
 
 \subsection{Constraint-Aware Influence Graph Construction}
 \label{sec:influence}
-Classical \textsf{GAMER} ordering constructs an undirected influence graph $G = (\mathcal{V}, E, w)$ over $\text{SAS}^+$ variables $\mathcal{V}$ where $E$ consists solely of causal dependencies $E_{\text{causal}}$ derived from action preconditions and effects \cite{edelkamp2008gamer, kissmann2014bdd}. To optimize for the constraint BDDs conjoined during search ($C(X)$ in Equation~\ref{eq:constraint_bdd}), we expand $G$ by overlaying a set of co-occurrence edges $E_{\text{constraint}}$ derived from $h^2$ mutexes and exactly-one invariant groups \cite{torralba2013constrained}.
+Classical \textsf{GAMER} ordering constructs an undirected influence graph $G = (\mathcal{V}, E, w)$ over $\text{SAS}^+$ variables $\mathcal{V}$ where $E$ consists solely of causal dependencies $E_{\text{causal}}$ derived from action preconditions and effects \cite{edelkamp2008gamer, kissmann2014bdd}. To optimize for the constraint structure ($C$ in Equation~\ref{eq:constraint_bdd}) that e-deletion compiles into the transition relations and initial frontier, we expand $G$ by overlaying a set of co-occurrence edges $E_{\text{constraint}}$ derived from $h^2$ mutexes and exactly-one invariant groups \cite{torralba2013constrained}.
 
 Let $\mathcal{M}$ denote the set of all static invariant groups. Each group $M \in \mathcal{M}$ contains a set of facts $\mathcal{F}_M = \{(v_1, d_1), \dots, (v_k, d_k)\}$. For every pair of distinct facts $(v_i, d_i), (v_j, d_j) \in \mathcal{F}_M$ with $v_i \neq v_j$, we insert an edge $(v_i, v_j)$ into $E_{\text{constraint}}$ with a base weight $w_{\text{co}} \in \mathbb{R}_{> 0}$.
 
@@ -249,7 +251,7 @@ The total weight $w(v_i, v_j)$ between any two state variables $v_i, v_j \in \ma
 \end{aligned}
 \label{eq:total_weight}
 \end{equation}
-where $\mathcal{M}_{i,j}$ is the set of invariant groups containing co-occurring facts for variables $v_i$ and $v_j$. In the confirmed policy configuration this reduces to $w_{\text{pair}}(M) = w_{\text{co}}$ and $\text{SkipCausal} \equiv 0$.
+where $\mathcal{M}_{i,j}$ is the set of invariant groups containing co-occurring facts for variables $v_i$ and $v_j$, and each group contributes once \emph{per co-occurring fact pair} (a group holding several facts of $v_i$ and $v_j$ adds $w_{\text{pair}}$ with the corresponding multiplicity). In the confirmed policy configuration this reduces to $w_{\text{pair}}(M) = w_{\text{co}}$ and $\text{SkipCausal} \equiv 0$.
 
 % ---------------------------------------------------------
 % PIPELINE DIAGRAM (TikZ)
@@ -266,7 +268,7 @@ where $\mathcal{M}_{i,j}$ is the set of invariant groups containing co-occurring
 
     \node [draw, rectangle, rounded corners=3pt, fill=primary!10, draw=primary, line width=0.8pt, below=0.7cm of opt, text width=2.2cm, align=center] (order) {\scriptsize Variable Order $\pi^*$};
 
-    \node [draw, rectangle, rounded corners=3pt, fill=bglight, draw=primary, line width=0.8pt, left=0.5cm of order, text width=2.3cm, align=center] (symk) {\scriptsize \textsf{SymK} Search Engine\\ Image + $C(X')$ Conjoin};
+    \node [draw, rectangle, rounded corners=3pt, fill=bglight, draw=primary, line width=0.8pt, left=0.5cm of order, text width=2.3cm, align=center] (symk) {\scriptsize \textsf{SymK} Search Engine\\ Image over\\ constraint-compiled TRs};
 
     % Paths
     \draw[->, thick, primary] (task) -- (graph);
@@ -345,7 +347,7 @@ Algorithm~\ref{alg:constraint_ordering} details the complete variable ordering p
 
 \subsection{Pre-Registered Per-Domain Policy Execution}
 \label{sec:policy}
-Because constraint BDD density varies by domain structure, applying constraint ordering suite-wide can induce domain-specific trade-offs. To deliver a confirmed, robust baseline improvement, we define a targeted per-domain policy $\mathcal{W}(d)$ mapping each domain $d$ to its constraint edge weight:
+Because constraint density varies by domain structure, applying constraint ordering suite-wide induces domain-specific trade-offs. To evaluate the replicated per-domain signals under a fixed protocol, we define a targeted per-domain policy $\mathcal{W}(d)$ mapping each domain $d$ to its constraint edge weight:
 \begin{equation}
     \mathcal{W}(d) = \begin{cases}
         2.0 & \text{if } d \in \{\text{\textit{woodworking-opt08}}, \\
@@ -361,25 +363,25 @@ When $\mathcal{W}(d) = 0.0$, the constraint accumulation loop is bypassed comple
 
 \section{Results} \label{sec:res}
 
-We evaluate our constraint-aware variable ordering framework inside \textsf{SymK} across the complete International Planning Competition (IPC) optimal-STRIPS benchmark suite, comprising 66 domains and 1,847 instances. All experiments were conducted under standardized resource limits of 1800 seconds wall-clock time, 8\, GB RAM, and 1 CPU core per task. Our headline evaluation was strictly pre-registered before data collection. 
+We evaluate our constraint-aware variable ordering framework inside \textsf{SymK} across the complete International Planning Competition (IPC) optimal-STRIPS benchmark suite, comprising 66 domains and 1,847 instances. All experiments were conducted under standardized resource limits of 1800 seconds wall-clock time, 8\, GB RAM, and 1 CPU core per task. The design and pass/fail gates of our headline evaluation were committed publicly before the confirmatory results were produced (pre-registration document in the repository). 
 
-\subsection{Confirmed Per-Domain Improvement (Pre-Registered A/B)}
+\subsection{Per-Domain Gains Under a Pre-Registered A/B}
 Initial full-suite exploratory runs identified strong, replicated positive signals on five specific domains: \textit{parking-opt14}, \textit{barman-opt11}, \textit{tpp}, \textit{woodworking-opt08}, and \textit{woodworking-opt11}. On \textit{woodworking}, varying the constraint weight $w_{\text{co}}$ exhibited a monotonic dose-response acceleration ($w=0.5 \to 0.87\times$, $w=1.0 \to 0.84\times$, $w=2.0 \to \mathbf{0.586\times}$ relative to stock, faster on 38/47 instances, exact Wilcoxon $p = 4 \cdot 10^{-7}$, sign test $p = 2.5 \cdot 10^{-5}$). This exploratory figure is a search-time ratio; the confirmatory study below measures the same effect end-to-end in wall-clock at $0.647$ ($1.55\times$), and we quote the latter throughout.
 
 To validate this signal, we pre-registered a targeted per-domain policy: enabling constraint-aware variable ordering with per-domain weights $\mathcal{W}(d)$ (Equation~\ref{eq:policy_weights}) on the five signal domains while executing stock \textsf{SymK} elsewhere. We executed a confirmatory, double-replicated A/B study with 480 runs, placing each instance's stock and policy jobs adjacently in the execution queue so that the two arms meet similar machine load. Adjacency reduces but does not eliminate order effects: the queue always emits stock before policy, and we did not counterbalance.
 
-As summarized in Table~\ref{tab:prereg_ab}, \textbf{all four pre-registered evaluation gates passed}. The per-domain coverage gains relative to stock \textsf{SymK} across both independent replicates are detailed in Table~\ref{tab:ab_domain_breakdown}.
+As summarized in Table~\ref{tab:prereg_ab}, \textbf{all four pre-registered evaluation gates passed}. The per-domain coverage gains relative to stock \textsf{SymK} across both execution replicates are detailed in Table~\ref{tab:ab_domain_breakdown}.
 
-\begin{funfact}[Headline Result: Reproducible Gain on the Targeted Domains]
+\begin{funfact}[Headline Result: Repeated $+6$ Coverage on Five Post-Hoc-Selected Domains]
 On the five domains it targets, the pre-registered policy gains $+6$ coverage in each of two replicates (64/65 $\to$ 70/71 of 120 instances) and accelerates \textit{woodworking} by 1.55$\times$, with no cost disagreement on any commonly solved instance. The domains were selected post hoc (Section~\ref{sec:limits}), so this is same-task reproducibility, not an out-of-sample estimate of what the method would give on unseen domains.
 \end{funfact}
 
 \subsection{Bounded Suite-Wide Null for Always-On Ordering}
 When constraint-aware variable ordering is enabled universally across all 66 domains, the suite-wide performance changes minimally. Across 1,847 benchmark instances, stock \textsf{SymK} solves 1145 instances, whereas the always-on constraint ordering solves 1139 instances.
 
-The overall coverage difference ($-6$ instances) lies well within our measured empirical protocol noise floor of $\pm 17$ instances (Section~\ref{sec:ceiling}). Discordant pairs show 13 gains versus 19 losses (exact sign test $p = 0.38$).
+The overall coverage difference ($-6$ instances) is statistically unremarkable: discordant pairs show 13 gains versus 19 losses (exact sign test $p = 0.38$), and we have no clean full-suite replicate from which to calibrate how much coverage drift this protocol produces on its own (Section~\ref{sec:ceiling}).
 
-On commonly solved instances ($n = 1{,}126$), the wall-clock geometric mean ratio is 1.005 with a median of 1.000 and a domain-clustered 95\% confidence interval of [0.97, 1.05] (Table~\ref{tab:suitewide_results}). This tightly bounded zero excludes even a 5\% suite-wide effect.
+On commonly solved instances ($n = 1{,}126$), the wall-clock geometric mean ratio is 1.005 with a median of 1.000 and a domain-clustered 95\% confidence interval of [0.97, 1.05] (Table~\ref{tab:suitewide_results}). This bounds the always-on ordering's mean wall-clock effect on commonly solved instances to within about 5\%; it does not bound coverage, which is addressed above.
 
 Seed control evaluations demonstrate that the ordering induces real per-instance perturbations ($\text{sd}(\log \text{wall ratio}) = 0.43$ vs.\ $0.24$ for identical-code-path reruns), but the net distribution is unbiased. Isolated suite-wide regressions occur on domains like \textit{freecell} (coverage drops 25 $\to$ 20, replicated) and \textit{floortile-opt14} ($1.56\times$ median, slower on 20/20 commonly solved instances, sign test $p = 1.9 \cdot 10^{-6}$, $p = 1.3 \cdot 10^{-4}$ after Bonferroni correction over 66 domains), justifying the targeted per-domain policy structure.
 
@@ -403,9 +405,9 @@ Each point is one instance on which the method is active and both configurations
 solve ($n = 759$); axes are log ratios of constraint-aware ordering to the
 \textsf{GAMER} baseline, with the least-squares trend in black. \textbf{Left:}
 the transition-relation size the objective actually optimizes barely predicts
-runtime ($\rho = 0.198$) -- a diffuse cloud around a nearly flat trend.
+runtime ($\rho = 0.199$) -- a diffuse cloud around a nearly flat trend.
 \textbf{Right:} peak search-BDD size, which the ordering leaves essentially
-unchanged, predicts runtime strongly ($\rho = 0.582$). Shrinking the transition
+unchanged, predicts runtime strongly ($\rho = 0.580$). Shrinking the transition
 relation is not shrinking the search.}
 \label{fig:mechanism}
 \end{figure*}
@@ -418,7 +420,7 @@ We investigated whether algorithm selection, restart schedules, or portfolio wra
     \item Run-to-run variability: The selector executes the stock code path whenever it declines to switch, giving 1,076 pairs of runs of \emph{identical} code; their runtimes have $\text{sd}(\log \text{ratio}) = 0.231$, and 33\% differ by more than 20\%. We emphasise that this measures \emph{timing} dispersion only. We do not have a clean full-suite replicate of a single configuration, and therefore cannot estimate a coverage-resolution floor from our data; the corresponding caution is empirical rather than derived. It is not idle: an earlier 551-instance sample suggested a $+3$ suite-wide gain that did not replicate at full scale. We therefore treat small suite-wide coverage differences as uninformative without a replicate to calibrate them, and we do not claim a numerical resolution bound.
     \item Oracle Bound: An ideal 2-ordering oracle selector -- one that picks the better of stock and constraint-aware ordering per instance, at zero cost -- yields $+13$ instances (1,158 vs.\ 1,145), i.e.\ $0.7\%$ of the suite. Extrapolating from the measured per-instance dispersion, a $k$-ordering oracle is \emph{estimated} to reach roughly $+20$ to $+33$ instances for $k = 3 \dots 8$. These projections are model estimates, not measurements, and we did not release the simulator that produced them; they should be read as indicative only. What the released data do support is narrower: the achievable ceiling is a fraction of a percent of the suite, and the realised selector (below) captures none of it.
     \item Restart Schedules: In sequential budget-splitting tests under an 1800\,s limit, only one stock-unsolved instance is rescued by the constraint ordering within 600\,s (four within 900\,s), while 50 instances that stock solves require $>900\,\text{s}$. Consequently, all tested budget splits reduce overall coverage.
-    \item TR-Probe Selection: A build-time probe selector evaluating initial TR node size selects the faster ordering in $43$ of the $65$ deviating picks for which both arms independently solve ($66\%$; unclustered sign test $p = 0.013$, but $p \approx 0.08$ once resolved by domain). Given that the rule's threshold was itself tuned on these data, we treat this as exploratory rather than an established signal. Measured end-to-end, however, the wrapper is \textbf{18.4\% slower} than stock in wall-clock (Table~\ref{tab:suitewide_results}) while its search-only ratio is 0.99. The deficit therefore lies outside measured search time, but our data cannot apportion it among probing, process startup, repeated preprocessing and caching: even the 759 instances solved during presolve, which run no probe at all, show a wall ratio of 1.16 against a search ratio of 1.01. Its nominal $+5$ coverage (1150 vs.\ 1145) lies well inside the $\pm 17$-instance noise floor and is not a claim we make.
+    \item TR-Probe Selection: A build-time probe selector evaluating initial TR node size selects the faster ordering in $43$ of the $65$ deviating picks for which both arms independently solve ($66\%$; unclustered sign test $p = 0.013$, but $p \approx 0.08$ once resolved by domain). Given that the rule's threshold was itself tuned on these data, we treat this as exploratory rather than an established signal. Measured end-to-end, however, the wrapper is \textbf{18.4\% slower} than stock in wall-clock (Table~\ref{tab:suitewide_results}) while its search-only ratio is 0.99. The deficit therefore lies outside measured search time, but our data cannot apportion it among probing, process startup, repeated preprocessing and caching: even the 759 instances solved during presolve, which run no probe at all, show a wall ratio of 1.16 against a search ratio of 1.01. Its nominal $+5$ coverage (1150 vs.\ 1145) is within plausible run-to-run variation and is not a claim we make.
 \end{itemize}
 
 \subsection{Methodological Findings}
@@ -434,7 +436,7 @@ IPC benchmark instances recur across competition years. Of the 1,847 instances w
 \centering
 
 % ==================== TABLE 1 ====================
-\caption{Pre-registered confirmatory A/B evaluation results (480 total runs across 2 independent replicates).}
+\caption{Pre-registered confirmatory A/B evaluation results (480 total runs across 2 execution replicates).}
 \label{tab:prereg_ab}
 \small
 \begin{tabular}{llcc}
@@ -444,7 +446,7 @@ IPC benchmark instances recur across competition years. Of the 1,847 instances w
 Primary: Coverage Contrast & Coverage Gain $\ge +4$ & \textbf{+6 (Rep 1) / +6 (Rep 2)} & \textbf{CONFIRMED} \\
 Secondary: Woodworking Speed & Wall Time Geomean $\le 0.85$ & \textbf{0.647} ($1.55\times$ speedup, $n=94$) & \textbf{CONFIRMED} \\
 Guard: Domain Losses & No Replicated Domain Loss & \textbf{0 Replicated Domain Losses} & \textbf{PASSED} \\
-Integrity: Plan Optimality & No cost disagreement & \textbf{0 / 129 comparable pairs} & \textbf{PASSED} \\
+Integrity: Cost Agreement & No cost disagreement & \textbf{0 / 129 comparable pairs} & \textbf{PASSED} \\
 \bottomrule
 \end{tabular}
 
@@ -471,7 +473,7 @@ Integrity: Plan Optimality & No cost disagreement & \textbf{0 / 129 comparable p
 \vspace{2.5em}
 
 % ==================== TABLE 3 ====================
-\caption{Suite-wide performance across all 1,847 IPC optimal-STRIPS instances. Time ratios are \textbf{wall-clock relative to stock}, including all selector probe overhead, over instances solved by both the row configuration and stock; intervals are domain-clustered bootstrap 95\% CIs. The selector's search-only ratio, which excludes its probe tax, is 0.992 -- its entire deficit is probe overhead.}
+\caption{Suite-wide performance across all 1,847 IPC optimal-STRIPS instances. Time ratios are \textbf{wall-clock relative to stock}, including all selector probe overhead, over instances solved by both the row configuration and stock; intervals are domain-clustered bootstrap 95\% CIs. The selector's search-only ratio is 0.992: its deficit lies outside measured search time (probing, process startup, repeated preprocessing), which these data cannot further apportion.}
 \label{tab:suitewide_results}
 \small
 \begin{tabular}{lccccc}
@@ -502,7 +504,7 @@ Per-instance algorithm selection and sequential portfolios (e.g., \textsf{SATzil
 
 
 \subsection{Limitations}\label{sec:limits}
-Three limitations bound the claims above. First, and most important, \textbf{the five signal domains were selected post hoc} from the same full-suite runs that produced the suite-wide analysis. The pre-registered A/B establishes that the effect on those domains is \emph{reproducible} rather than run-to-run noise -- it recurs exactly across two interleaved replicates, with no negative cell -- but it does not make $+6$ an out-of-sample estimate. We claim that constraint-aware ordering reliably helps \emph{on these domains}, not that a policy derived this way transfers to unseen ones; the suite-wide null is direct evidence that it would not. A clean test would pre-register the five domains and evaluate on instances withheld from the selection step. Second, all runs come from a single machine and protocol, so absolute coverage is not comparable to published IPC figures and only within-run contrasts are meaningful at the measured $\pm 17$-instance resolution. Third, the $k$-ordering ceiling projections are extrapolations calibrated on the measured two-ordering oracle, not measurements, and we treat them as such.
+Three limitations bound the claims above. First, and most important, \textbf{the five signal domains were selected post hoc} from the same full-suite runs that produced the suite-wide analysis. The pre-registered A/B establishes that the effect on those domains is \emph{reproducible} rather than run-to-run noise: the aggregate $+6$ recurs in both interleaved replicates with no negative per-domain cell, though the instance-level pattern varies (4 of the 8 distinct newly solved instances gain in both replicates). It does not make $+6$ an out-of-sample estimate. We claim that constraint-aware ordering helps reproducibly \emph{on these domains under this protocol}, not that a policy derived this way transfers to unseen ones; the suite-wide null is direct evidence that it would not. A clean test would pre-register the five domains and evaluate on instances withheld from the selection step. Second, all runs come from a single machine and protocol, so absolute coverage is not comparable to published IPC figures, and we lack a clean replicate from which to quantify the coverage resolution of cross-run comparisons; only within-run contrasts should be read quantitatively. Third, the $k$-ordering ceiling projections are extrapolations calibrated on the measured two-ordering oracle, not measurements, and we treat them as such.
 
 \section{Conclusion \& Future Work}
 In this paper, we implemented and evaluated constraint-aware variable ordering inside \textsf{SymK} across the complete IPC optimal-STRIPS benchmark suite. Our inquiry delivers four primary outcomes:

@@ -1,6 +1,6 @@
 # Pre-registration: per-domain ordering-policy confirmatory A/B
 
-**Registered:** 2026-07-24, BEFORE the experiment runs (commit timestamp = proof).
+**Registered:** 2026-07-24 (the commit timestamp documents the date; see the correction note below for what it does and does not establish).
 **Motivation:** across two independent full-scale SymK runs, the constraint-aware
 ordering showed replicated per-domain effects: woodworking speedup (w=2 variant,
 geomean 0.586, Bonferroni-surviving p=5.7e-6 in the sweep), parking-opt14 +3/0
@@ -17,7 +17,7 @@ observations to a proven claim or demotes them to "suggestive".
 - **Replicates:** 2 per (instance, arm) = ~480 runs.
 - **Interleaving:** the job queue places stock/policy for the same instance
   adjacently, so machine contention hits both arms symmetrically (within-run
-  contrast floor ±3–4, vs ±17 across runs).
+  contrast floor ±3–4, versus much larger, unquantified cross-run drift).
 - **Protocol:** 1800 s wall, 8 GB, single CPU per run; fixed domain pairing
   (all 5 domains use a shared domain.pddl — unaffected by the fix7 bug class).
 
@@ -37,7 +37,7 @@ observations to a proven claim or demotes them to "suggestive".
    instance voids the experiment (expected: zero).
 
 No other endpoints will be claimed from this data; results land in
-`slbd-results/ab-policy.csv` on the server. (Correction, added with the
+`slbd-results/ab-policy.csv` on the server. (Correction, added 2026-08-14 after an external audit — not with the
 results: no analysis script was committed alongside this document, contrary
 to an earlier wording here. The gates above are computed by
 `misc/analysis/check_gates.py`, added later. This document was pushed
@@ -57,12 +57,12 @@ the runs had not started.)
   **0.647** (n=94 commonly-solved pairs, policy faster on 70/94) ≤ 0.85.
 - **GATE 3 GUARD: PASS** — zero per-domain net losses in any replicate.
 
-**Confirmed claim:** the per-domain constraint-ordering policy improves stock
-SymK (IPC-2023) by **+6 coverage** on the five signal domains (exactly
-replicated across two interleaved replicates) and accelerates woodworking by
-**~1.55×**, with optimality preserved. Suite-wide, the policy equals stock on
+**Result:** the per-domain constraint-ordering policy gains **+6 coverage**
+over stock SymK in each of two execution replicates on the five (post-hoc
+selected) signal domains, and accelerates woodworking by **~1.55×**, with no
+cost disagreement between arms. Suite-wide, the policy equals stock on
 all other domains by construction.
 
 **fix7-corrected grand-run absolutes** (230 repaired instances merged):
 stock 1145 / always-on 1139 / selector 1150, of 1847. The suite-wide null for
-the always-on ordering is unchanged (−6, within the ±17 replicate floor).
+the always-on ordering is unchanged (−6, indistinguishable from run-to-run variation).

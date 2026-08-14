@@ -78,9 +78,10 @@ void OriginalStateSpace::init_mutex(const std::vector<MutexGroup> &mutex_groups)
     init_mutex(mutex_groups, genMutexBDD, genMutexBDDByFluent, false);
     init_mutex(mutex_groups, genMutexBDD, genMutexBDDByFluent, true);
 
-    // Diagnostic: total size of the constraint (mutex) BDDs that are conjoined
-    // into every search step. Used to measure whether constraint-aware variable
-    // ordering shrinks them.
+    // Diagnostic: total size of the constraint (mutex) BDDs. Under the default
+    // e-deletion these are compiled into the TRs and applied to the frontier at
+    // initialization (MUTEX_AND re-applies them at every step). Used to measure
+    // whether constraint-aware variable ordering shrinks them.
     long fw_nodes = 0, bw_nodes = 0;
     for (const BDD &b : notMutexBDDsFw) {
         fw_nodes += b.nodeCount();

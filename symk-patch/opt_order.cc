@@ -46,7 +46,8 @@ void InfluenceGraph::compute_gamer_ordering(
     // Constraint-aware ordering (opt-in, env SLBD_CONSTRAINT_ORDER): on top of
     // the causal-graph edges, add influence between variables whose facts
     // co-occur in a mutex/invariant group, pulling co-constrained variables
-    // together to shrink the mutex/constraint BDDs conjoined during search.
+    // together to shrink the mutex/constraint BDDs (compiled into the TRs
+    // and initial frontier under the default e-deletion scheme).
     // Weight via SLBD_CO_WEIGHT (default 1.0).
     // [Ported from fast-downward-symbolic; needs the weight-aware objective.]
     if (constraint_only || getenv("SLBD_CONSTRAINT_ORDER")) {

@@ -12,8 +12,10 @@ Symbolic (BDD-based) search is a leading approach to cost-optimal classical
 planning, and its cost is dominated by BDD size — which depends critically on the
 *variable ordering*. The GAMER-family ordering used by state-of-the-art planners
 optimizes causal-graph proximity only. Torralba and Alcázar (SoCS 2013) observed
-that the mutex/invariant **constraint BDDs** conjoined into every search step also
-depend on that ordering, and proposed optimizing for them as future work.
+that the mutex/invariant **constraint BDDs** — compiled, under SymK's default
+e-deletion scheme, into the transition relations that every image operation
+applies — also depend on that ordering, and suggested exploring orders derived
+from the constraints.
 
 This repository implements and evaluates exactly that idea — mutex and
 exactly-one invariant **co-occurrence edges** added to the ordering objective —

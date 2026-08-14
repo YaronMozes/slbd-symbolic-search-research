@@ -13,6 +13,7 @@ repository; these are the files the reported numbers come from.
 | `symk-selector-grand-fix7.csv` | 690 | Repair run for 230 instances: seven IPC domains ship one domain file per instance, and an early version of our driver mis-paired them, so those runs failed identically in every configuration. Merge this file over the one above (replacing those instances' rows) to obtain the coverage reported in the paper |
 | `co-grand-instr.csv` | 7,388 | **§4.3 mechanism** — instrumented run with per-instance BDD statistics |
 | `symk-sweep.csv` | 2,292 | **§4.1 dose–response** — constraint-weight sweep (off / on / w0.5 / w2 / norm / skipc) |
+| `symk-co-grand-ab.csv` | 3,694 | Earlier independent full-suite off/on run ("discovery run A"). **Caution:** affected by the domain-pairing defect and never repaired — use only for within-run contrasts and selection-null checks, never for absolute coverage |
 
 ## Columns
 

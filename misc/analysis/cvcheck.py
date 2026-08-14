@@ -4,7 +4,8 @@ import csv, math, os, re, hashlib
 from collections import defaultdict
 import numpy as np
 
-D = r"C:\Users\Yaron\Desktop\slbd-server-backup\results-2026-07-24"
+D = os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "data"))
 rows = list(csv.DictReader(open(os.path.join(D, "co-grand-instr.csv"),
                                 encoding="utf-8", errors="replace")))
 inst = defaultdict(dict)

@@ -1,28 +1,21 @@
 # Analysis scripts
 
-The scripts that produce the numbers in the paper, added after an external audit
-noted that no committed code regenerated them.
-
-All read the CSVs in [`../../data/`](../../data/). Paths are set at the top of
-each file; edit them if your checkout lives elsewhere. Run with `python3`.
+Regenerate the paper's numbers from the CSVs in [`../../data/`](../../data/).
+Paths are resolved relative to this directory, so a plain checkout runs as-is
+(`python3 <script>.py`; numpy and matplotlib are needed only for `mechfig.py`).
 
 | Script | Produces |
 |---|---|
-| `check_gates.py` | The pre-registered A/B gates and per-domain breakdown (Tables 1–2) |
-| `deepcheck.py` | Re-derives the Results and Methodology figures from raw data |
-| `recompute.py` | The corrected regression-to-the-mean, noise, restart and selector figures |
-| `cvcheck.py` | Leave-one-domain-out vs leave-one-family-out ridge CV ($R^2 \approx 0.06 / 0.05$) |
-| `mechfig.py` | `paper/mechanism.pdf` (Figure 2) |
-| `audit_check.py` | Selection-null checks and the two-ordering oracle |
+| `check_gates.py` | Tables 1–3: the pre-registered gates, per-domain A/B breakdown, and the suite-wide comparison with domain-clustered bootstrap CIs |
+| `deepcheck.py` | The Results/Methodology figures (freecell, floortile, noise pairs, regression-to-the-mean; the duplicate audit additionally needs `BENCHMARKS=/path/to/downward-benchmarks`) |
+| `audit_check.py` | Selection-null checks (tie-exhausted) and the two-ordering oracle |
+| `cvcheck.py` | Leave-one-domain-out vs leave-one-family-out ridge CV |
+| `mechfig.py` | `paper/mechanism.pdf` (Figure 2); Spearman with tie-aware average ranks |
+| `common.py` | Shared helpers (tie-aware ranks, conventional medians, exact sign test, the fix7 merge) |
 
-## Not included
+## Not reproducible from here
 
-Two figures in the paper are **not** reproducible from this directory, and are
-labelled as estimates in the text:
-
-- the $k$-ordering oracle projections ($+20 \dots +33$ for $k = 3 \dots 8$),
-- the 150-point selector parameter sweep.
-
-Both came from a simulator calibrated on the measured two-ordering oracle that
-was not retained. They are indicative only; no conclusion in the paper rests on
+Two figures in the paper are **estimates whose generator was not retained**, and
+are labelled as such in the text: the k-ordering oracle projections (+20…+33 for
+k = 3…8) and the 150-point selector parameter sweep. No conclusion rests on
 them alone.
