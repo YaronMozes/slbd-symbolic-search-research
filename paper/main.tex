@@ -133,7 +133,7 @@ In addition to causal transitions, modern symbolic planners heavily rely on stat
 Can conjoining mutex and invariant co-occurrence edges into the \textsf{GAMER} variable ordering objective systematically compress constraint BDDs and accelerate state-of-the-art symbolic search in \textsf{SymK}?
 \end{insightbox}
 
-In this work, we implement and systematically evaluate constraint-aware variable ordering inside \textsf{SymK} on the complete IPC optimal-STRIPS benchmark suite (66 domains, 1,847 instances). During our implementation, we also identified and repaired a long-standing defect in the deployed \textsf{GAMER} ordering optimizer within \textsf{SymK}, wherein edge weights were silently ignored during local search swaps.
+Variable ordering was not our first target: we began with search-control alternatives -- landmark-guided direction selection for bidirectional symbolic search, meet-in-the-middle BDD-overlap signals, and forward-reachability pruning of the backward frontier -- and found each to be net-neutral or actively harmful, because none of them addresses the structural BDD-size bottleneck. In this work, we therefore implement and systematically evaluate constraint-aware variable ordering inside \textsf{SymK} on the complete IPC optimal-STRIPS benchmark suite (66 domains, 1,847 instances). During our implementation, we also identified and repaired a long-standing defect in the deployed \textsf{GAMER} ordering optimizer within \textsf{SymK}, wherein edge weights were silently ignored during local search swaps.
 
 Across extensive empirical evaluations on the complete IPC optimal-STRIPS suite, we show that a targeted, pre-registered per-domain policy strictly improves stock \textsf{SymK} by $+6$ coverage on its five target domains (exactly replicated) while accelerating domains like \textit{woodworking} by $1.55\times$. Enabled universally, however, the ordering produces a tightly bounded null effect because it compresses transition relations without shrinking peak search-BDD sizes, the true runtime bottleneck. We present our full empirical results, diagnostic mechanism analysis, ceiling bounds, and methodological findings in Section~\ref{sec:res}.
 
@@ -393,6 +393,7 @@ On commonly solved instances ($n = 1{,}126$), the wall-clock geometric mean rati
 Seed control evaluations demonstrate that the ordering induces real per-instance perturbations ($\text{sd}(\log \text{time ratio}) = 0.44$ vs.\ $0.20$--$0.23$ same-config noise), but the net distribution is unbiased. Isolated suite-wide regressions occur on domains like \textit{freecell} (coverage drops 25 $\to$ 20, replicated) and \textit{floortile-opt14} ($1.57\times$ slower on 20/20 commonly solved instances, sign test $p = 1.9 \cdot 10^{-6}$, $p = 1.3 \cdot 10^{-4}$ after Bonferroni correction over 66 domains), justifying the targeted per-domain policy structure.
 
 \subsection{Mechanism Analysis - Decoupling TR Size from Search Cost}
+\label{sec:mech}
 By instrumenting our symbolic planner to log per-instance BDD node statistics at preprocessing and throughout search, we reveal the core mechanism governing these results:
 
 \begin{enumerate}\setlength{\itemsep}{1pt}
@@ -418,17 +419,13 @@ relation is not shrinking the search.}
 \label{fig:mechanism}
 \end{figure*}
 
-\begin{insightbox}[Core Empirical Discovery: Shrinking TR $\neq$ Shrinking Search]
-Optimizing variable ordering for mutex co-occurrence reliably shrinks Transition Relations (TRs) by 13.3\%. However, TR size correlates weakly with search runtime ($\rho = 0.202$). Search runtime is instead strictly governed by peak search-BDD node count ($\rho = 0.593$), which the ordering leaves uncompressed.
-\end{insightbox}
-
 \subsection{Empirical Ceiling Bounds \& Portfolio Selection Limits}
 \label{sec:ceiling}
 We investigated whether algorithm selection, restart schedules, or portfolio wrappers could extract suite-wide gains from constraint-aware variable orderings. We established several theoretical and empirical ceiling bounds:
 
 \begin{itemize}\setlength{\itemsep}{2pt}
     \item Protocol Resolution Limit: The selector executes the stock code path whenever it declines to switch, giving 1,076 pairs of runs of \emph{identical} code; their runtimes have $\text{sd}(\log \text{ratio}) = 0.231$, and 33\% differ by more than 20\%. Two independent full-suite runs of the identical stock configuration differ by 26 instances of coverage. This imposes a strict $\pm 17$-instance resolution ceiling for suite-wide coverage claims -- a bound we confirmed the hard way: an earlier 551-instance sample suggested a $+3$ suite-wide gain that did not replicate at full scale. Suite-wide coverage differences below this floor should not be trusted regardless of their apparent direction.
-    \item Oracle Bound: An ideal 2-ordering oracle selector yields a theoretical coverage gain of +12 instances, which sits entirely below the $\pm 17$-instance noise floor. Calibrated models for $k$-ordering oracles yield +20 ($k=3$), +24 ($k=4$), +29 ($k=6$), and +33 ($k=8$) instances; practical selectors capturing $\sim \frac{1}{3}$ of oracle value cannot achieve statistically detectable suite-wide wins.
+    \item Oracle Bound: An ideal 2-ordering oracle selector yields a theoretical coverage gain of +12 instances, which sits entirely below the $\pm 17$-instance noise floor. Extrapolating from the measured per-instance dispersion, a $k$-ordering oracle is \emph{estimated} to reach roughly +20 to +33 instances for $k = 3 \dots 8$; even taking the optimistic end at face value, a practical selector capturing a fraction of oracle value cannot achieve a statistically detectable suite-wide win. These projections are model estimates, not measurements.
     \item Restart Schedules: In sequential budget-splitting tests under an 1800\,s limit, only one stock-unsolved instance is rescued by the constraint ordering within 600\,s (four within 900\,s), while 50 instances that stock solves require $>900\,\text{s}$. Consequently, all tested budget splits reduce overall coverage.
     \item TR-Probe Selection: A build-time probe selector evaluating initial TR node size selects the correct ordering 66\% of the time \emph{when it deviates from stock} ($43/65$, sign test $p = 0.013$) -- a real but weak signal. Measured end-to-end, however, the probe tax dominates: the selector is \textbf{18.4\% slower} than stock in wall-clock (Table~\ref{tab:suitewide_results}), and no configuration in a 150-point parameter sweep is net-positive. Its nominal $+5$ coverage (1150 vs.\ 1145) lies well inside the $\pm 17$-instance noise floor and is not a claim we make.
 \end{itemize}
@@ -503,7 +500,7 @@ Our findings touch upon several foundational threads in symbolic classical plann
 \subsection{Symbolic Search and BDD Variable Ordering}
 Symbolic state-space exploration relies on Binary Decision Diagrams (BDDs) to represent state sets and transition relations compactly. The computational cost of symbolic search is dictated by the BDD node count, which is notoriously sensitive to the chosen variable ordering. \textsf{GAMER} \cite{edelkamp2008gamer} introduced local search over a weighted linear arrangement objective on causal graph edges to optimize BDD variable orders. This scheme was inherited largely unchanged by state-of-the-art planners, including \textsf{SymBA*} \cite{torralba2014symba} and \textsf{SymK} \cite{speck2020symk, speck2023symkipc}.
 
-Kissmann and Hoffmann \cite{kissmann2014bdd} conducted an extensive study of BDD variable orderings in classical planning, establishing that ordering quality can vary wildly across instances and that finding optimal orderings statically is highly unpredictable. Our diagnostic results reinforce their verdict of unpredictability: while constraint-aware ordering systematically compresses transition relations (TRs), search runtime is ultimately governed by the peak search-BDD size, which is unaffected by preprocessing-time topology optimizations.
+Kissmann and Hoffmann \cite{kissmann2014bdd} conducted an extensive study of BDD variable orderings in classical planning, establishing that ordering quality can vary wildly across instances and that finding optimal orderings statically is highly unpredictable. Our results sharpen their verdict by identifying \emph{which} quantity resists prediction: not BDD size in general, but specifically the peak size reached during search, which no preprocessing-time property we measured anticipates (Section~\ref{sec:mech}).
 
 \subsection{Invariants and Constraint-Aware Ordering}
 The inclusion of state invariants, such as $h^2$ mutexes and exactly-one groups, is essential for pruning spurious states during symbolic search frontier expansion \cite{torralba2013constrained}. Torralba and Alc\'azar \cite{torralba2013constrained} observed that these conjoined constraint BDDs depend heavily on the variable ordering and explicitly suggested incorporating mutex edges into the arrangement objective as future work. Our work directly implements and evaluates this open suggestion inside \textsf{SymK}.
@@ -511,14 +508,8 @@ The inclusion of state invariants, such as $h^2$ mutexes and exactly-one groups,
 Outside classical planning, constraint-graph variable ordering is well-established in SAT and VLSI CAD literature, exemplified by force-directed heuristics like \textsf{FORCE} and \textsf{MINCE} \cite{aloul2003force}. While approaches like \textsf{GamerPre} \cite{kissmann2014bdd} incorporate precondition co-occurrence edges, and Torralba et al.\ \cite{torralba2017efficient} use mutexes and invariants for pruning and constraint-BDD compilation while holding the variable order fixed, our framework specifically targets state-invariant mutex and invariant group co-occurrences within the \textsf{GAMER} arrangement objective itself.
 
 \subsection{Algorithm Selection, Portfolios, and Methodology}
-Per-instance algorithm selection and sequential portfolios (e.g., \textsf{SATzilla} \cite{xu2008satzilla}, Fast Downward Stone Soup \cite{helmert2011stonesoup}) are standard techniques for navigating solver complementary strengths. Our ceiling bound analysis demonstrates why standard selection or restart wrappers over these orderings fail to yield suite-wide gains: the theoretical two-ordering oracle gain (+12 instances) sits below our measured empirical protocol noise floor ($\pm 17$ instances).
+Per-instance algorithm selection and sequential portfolios (e.g., \textsf{SATzilla} \cite{xu2008satzilla}, Fast Downward Stone Soup \cite{helmert2011stonesoup}) are standard techniques for navigating solver complementary strengths. Both presuppose components with complementary strengths and a signal to select on. Our ceiling analysis (Section~\ref{sec:ceiling}) shows that neither precondition holds here: the entire oracle gain available from these orderings is smaller than the protocol's own measurement noise.
 
-Furthermore, our methodological findings contribute important cautionary lessons for planning benchmarks:
-\begin{enumerate}\setlength{\itemsep}{1pt}
-    \item \textbf{Regression to the Mean:} We demonstrated that evaluating runtime speedups strictly on "hard" instances filtered by baseline performance introduces severe selection bias, turning neutral performance into an apparent 20\% speedup.
-    \item \textbf{Cross-Year Duplicate Leakage:} 322 of the 1,847 evaluated IPC instances are byte-identical to an instance in another domain (155 groups), so domain-wise cross-validation trains and tests on the same tasks; deduplication is a prerequisite for any learned-selector claim on this suite.
-\end{enumerate}
-Variable ordering was not our first target: we first explored search-control alternatives, including landmark-guided direction selection for bidirectional symbolic search, meet-in-the-middle BDD-overlap signals, and forward-reachability pruning of the backward frontier, all of which we found to be net-neutral or actively harmful, ultimately pointing us toward the variable-ordering lever explored in this paper.
 
 \section{Conclusion \& Future Work}
 In this paper, we implemented and evaluated constraint-aware variable ordering inside \textsf{SymK} across the complete IPC optimal-STRIPS benchmark suite. Our inquiry delivers four primary outcomes:
@@ -528,7 +519,7 @@ In this paper, we implemented and evaluated constraint-aware variable ordering i
 
     \item \textbf{Bounded Suite-Wide Null:} Enabled universally, the ordering yields a tightly bounded zero effect (coverage 1145 vs.\ 1139; geomean wall ratio 1.005, 95\% CI [0.97, 1.05]), excluding even a 5\% suite-wide effect.
 
-    \item \textbf{Mechanism Uncovering:} Diagnostic logging reveals the root cause: the ordering systematically compresses Transition Relation (TR) node sizes by 13.3\% ($p \approx 3 \cdot 10^{-21}$), but TR size is decoupled from search cost ($\rho = 0.202, R^2 \approx 0.04$), which is instead dictated by peak search-BDD size ($\rho = 0.593$).
+    \item \textbf{Mechanism Uncovering:} The ordering compresses transition relations by 13.3\% as designed, but TR size explains only ${\approx}4\%$ of the variance in runtime; peak search-BDD size, which the ordering does not move, is the operative quantity. Optimizing the wrong proxy is why a sound idea produces no effect.
 
     \item \textbf{Ceiling Bounds \& Methodological Insights:} Empirical protocols establish a $\pm 17$-instance resolution limit, proving why portfolios and selection wrappers cannot yield suite-wide gains, while highlighting critical traps in hard-instance subsetting and IPC duplicate leakage.
 \end{itemize}
