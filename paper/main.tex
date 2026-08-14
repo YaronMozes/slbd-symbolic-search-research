@@ -432,9 +432,8 @@ Selecting "hard" instances based on baseline runtime artificially skews comparat
 \subsubsection{IPC Cross-Year Duplicate Leakage}
 IPC benchmark instances recur across competition years. Of the 1,847 instances we evaluate, \textbf{322 are byte-identical to an instance filed under a different domain} (155 duplicate groups, by MD5 over the problem files). Leave-one-domain-out protocols therefore train and test on literally the same tasks, and per-domain results are not fully independent observations; deduplication should precede any cross-validated claim on this suite. For our own data the hazard is moot because there is little to predict in the first place: ridge regression from preprocessing features (variable count, co-occurrence edge count and density, mutex-BDD and transition-relation sizes) to the ordering's log runtime effect reaches only $R^2 = 0.06$ under leave-one-domain-out and $R^2 = 0.05$ under leave-one-\textit{family}-out cross-validation, consistent with Kissmann and Hoffmann's verdict \cite{kissmann2014bdd} that ordering quality is not predictable before the BDDs are built.
 
-\begin{table*}[p]
+\begin{table*}[t]
 \centering
-
 % ==================== TABLE 1 ====================
 \caption{Pre-registered confirmatory A/B evaluation results (480 total runs across 2 execution replicates).}
 \label{tab:prereg_ab}
@@ -450,8 +449,10 @@ Integrity: Cost Agreement & No cost disagreement & \textbf{0 / 129 comparable pa
 \bottomrule
 \end{tabular}
 
-\vspace{2.5em}
+\end{table*}
 
+\begin{table*}[t]
+\centering
 % ==================== TABLE 2 ====================
 \caption{Per-domain coverage breakdown on the five signal domains across Replicates 1 and 2. Counts are instances solved within 1800\,s; $|\mathcal{I}|$ is the number of instances in the domain.}
 \label{tab:ab_domain_breakdown}
@@ -470,8 +471,10 @@ Integrity: Cost Agreement & No cost disagreement & \textbf{0 / 129 comparable pa
 \bottomrule
 \end{tabular}
 
-\vspace{2.5em}
+\end{table*}
 
+\begin{table*}[t]
+\centering
 % ==================== TABLE 3 ====================
 \caption{Suite-wide performance across all 1,847 IPC optimal-STRIPS instances. Time ratios are \textbf{wall-clock relative to stock}, including all selector probe overhead, over instances solved by both the row configuration and stock; intervals are domain-clustered bootstrap 95\% CIs. The selector's search-only ratio is 0.992: its deficit lies outside measured search time (probing, process startup, repeated preprocessing), which these data cannot further apportion.}
 \label{tab:suitewide_results}
