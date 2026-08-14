@@ -10,7 +10,7 @@ repository; these are the files the reported numbers come from.
 |---|---|---|
 | `ab-policy.csv` | 480 | **Tables 1–2** — the pre-registered confirmatory A/B (stock vs per-domain policy, 5 signal domains, 2 replicates) |
 | `symk-selector-grand.csv` | 5,541 | **Table 3** — full IPC suite, 1,847 instances × {off, on, selector} |
-| `symk-selector-grand-fix7.csv` | 690 | Repair run for the 230 instances hit by the domain-pairing defect (§4.5.4); merge over the file above to reproduce the corrected coverage |
+| `symk-selector-grand-fix7.csv` | 690 | Repair run for 230 instances: seven IPC domains ship one domain file per instance, and an early version of our driver mis-paired them, so those runs failed identically in every configuration. Merge this file over the one above (replacing those instances' rows) to obtain the coverage reported in the paper |
 | `co-grand-instr.csv` | 7,388 | **§4.3 mechanism** — instrumented run with per-instance BDD statistics |
 | `symk-sweep.csv` | 2,292 | **§4.1 dose–response** — constraint-weight sweep (off / on / w0.5 / w2 / norm / skipc) |
 

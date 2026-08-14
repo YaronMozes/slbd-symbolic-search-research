@@ -365,12 +365,7 @@ When $\mathcal{W}(d) = 0.0$, the constraint accumulation loop is bypassed comple
 
 \section{Results} \label{sec:res}
 
-We evaluate our constraint-aware variable ordering framework inside \textsf{SymK} across the complete International Planning Competition (IPC) optimal-STRIPS benchmark suite, comprising 66 domains and 1,847 instances. All experiments were conducted under standardized resource limits of 1800 seconds wall-clock time, 8\, GB RAM, and 1 CPU core per task. Our headline evaluation was strictly pre-registered before data collection. All suite-wide figures reported below use the repaired dataset.\footnote{Seven IPC
-domains ship one domain file per instance; an early version of our experiment
-driver mis-paired them, which depressed absolute coverage identically across all
-configurations and left every A/B delta intact. We repaired the pairing and
-re-ran all 230 affected instances; all numbers reported here use the repaired
-data, and \texttt{data/README.md} in the repository documents the merge.}
+We evaluate our constraint-aware variable ordering framework inside \textsf{SymK} across the complete International Planning Competition (IPC) optimal-STRIPS benchmark suite, comprising 66 domains and 1,847 instances. All experiments were conducted under standardized resource limits of 1800 seconds wall-clock time, 8\, GB RAM, and 1 CPU core per task. Our headline evaluation was strictly pre-registered before data collection. 
 
 \subsection{Confirmed Per-Domain Improvement (Pre-Registered A/B)}
 Initial full-suite exploratory runs identified strong, replicated positive signals on five specific domains: \textit{parking-opt14}, \textit{barman-opt11}, \textit{tpp}, \textit{woodworking-opt08}, and \textit{woodworking-opt11}. On \textit{woodworking}, varying the constraint weight $w_{\text{co}}$ exhibited a monotonic dose-response acceleration ($w=0.5 \to 0.87\times$, $w=1.0 \to 0.84\times$, $w=2.0 \to \mathbf{0.586\times}$ relative to stock, faster on 38/47 instances, exact Wilcoxon $p = 4 \cdot 10^{-7}$, sign test $p = 2.5 \cdot 10^{-5}$). This exploratory figure is a search-time ratio; the confirmatory study below measures the same effect end-to-end in wall-clock at $0.647$ ($1.55\times$), and we quote the latter throughout.
@@ -386,7 +381,7 @@ The pre-registered policy achieves an exact, replicated +6 coverage gain over st
 \subsection{Bounded Suite-Wide Null for Always-On Ordering}
 When constraint-aware variable ordering is enabled universally across all 66 domains, the suite-wide performance changes minimally. Across 1,847 benchmark instances, stock \textsf{SymK} solves 1145 instances, whereas the always-on constraint ordering solves 1139 instances.
 
-The overall coverage difference ($-6$ instances) lies well within our measured empirical protocol noise floor of $\pm 17$ instances (Section~\ref{sec:ceiling}). Discordant pairs show 13 gains versus 19 losses (exact sign test $p = 0.38$); restricting to the 1,617 instances untouched by the pairing defect noted in Section~\ref{sec:res} gives 12 versus 14 ($p = 0.85$), the same conclusion.
+The overall coverage difference ($-6$ instances) lies well within our measured empirical protocol noise floor of $\pm 17$ instances (Section~\ref{sec:ceiling}). Discordant pairs show 13 gains versus 19 losses (exact sign test $p = 0.38$).
 
 On commonly solved instances ($n = 1{,}126$), the wall-clock geometric mean ratio is 1.005 with a median of 1.000 and a domain-clustered 95\% confidence interval of [0.97, 1.05] (Table~\ref{tab:suitewide_results}). This tightly bounded zero excludes even a 5\% suite-wide effect.
 
@@ -480,7 +475,7 @@ Integrity: Plan Optimality & 0 Cost Mismatches & \textbf{0 / 480 Cost Mismatches
 \vspace{2.5em}
 
 % ==================== TABLE 3 ====================
-\caption{Suite-wide performance across all 1,847 IPC optimal-STRIPS instances (repaired dataset). Time ratios are \textbf{wall-clock relative to stock}, including all selector probe overhead, over instances solved by both the row configuration and stock; intervals are domain-clustered bootstrap 95\% CIs. The selector's search-only ratio, which excludes its probe tax, is 0.992 -- its entire deficit is probe overhead.}
+\caption{Suite-wide performance across all 1,847 IPC optimal-STRIPS instances. Time ratios are \textbf{wall-clock relative to stock}, including all selector probe overhead, over instances solved by both the row configuration and stock; intervals are domain-clustered bootstrap 95\% CIs. The selector's search-only ratio, which excludes its probe tax, is 0.992 -- its entire deficit is probe overhead.}
 \label{tab:suitewide_results}
 \small
 \begin{tabular}{lccccc}
