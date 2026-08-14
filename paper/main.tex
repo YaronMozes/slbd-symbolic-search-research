@@ -372,8 +372,8 @@ To validate this signal, we pre-registered a targeted per-domain policy: enablin
 
 As summarized in Table~\ref{tab:prereg_ab}, \textbf{all four pre-registered evaluation gates passed}. The per-domain coverage gains relative to stock \textsf{SymK} across both execution replicates are detailed in Table~\ref{tab:ab_domain_breakdown}.
 
-\begin{funfact}[Headline Result: Repeated $+6$ Coverage on Five Post-Hoc-Selected Domains]
-On the five domains it targets, the pre-registered policy gains $+6$ coverage in each of two replicates (64/65 $\to$ 70/71 of 120 instances) and accelerates \textit{woodworking} by 1.55$\times$, with no cost disagreement on any commonly solved instance. The domains were selected post hoc (Section~\ref{sec:limits}), so this is same-task reproducibility, not an out-of-sample estimate of what the method would give on unseen domains.
+\begin{funfact}[Headline Result: Repeated $+6$ Coverage on the Five Target Domains]
+On the five domains it targets, the pre-registered policy gains $+6$ coverage in each of two replicates (64/65 $\to$ 70/71 of 120 instances) and accelerates \textit{woodworking} by 1.55$\times$, with no cost disagreement on any commonly solved instance (domain selection and scope: Section~\ref{sec:limits}).
 \end{funfact}
 
 \subsection{Bounded Suite-Wide Null for Always-On Ordering}
@@ -432,7 +432,7 @@ Selecting "hard" instances based on baseline runtime artificially skews comparat
 \subsubsection{IPC Cross-Year Duplicate Leakage}
 IPC benchmark instances recur across competition years. Of the 1,847 instances we evaluate, \textbf{322 are byte-identical to an instance filed under a different domain} (155 duplicate groups, by MD5 over the problem files). Leave-one-domain-out protocols therefore train and test on literally the same tasks, and per-domain results are not fully independent observations; deduplication should precede any cross-validated claim on this suite. For our own data the hazard is moot because there is little to predict in the first place: ridge regression from preprocessing features (variable count, co-occurrence edge count and density, mutex-BDD and transition-relation sizes) to the ordering's log runtime effect reaches only $R^2 = 0.06$ under leave-one-domain-out and $R^2 = 0.05$ under leave-one-\textit{family}-out cross-validation, consistent with Kissmann and Hoffmann's verdict \cite{kissmann2014bdd} that ordering quality is not predictable before the BDDs are built.
 
-\begin{table*}[t]
+\begin{table*}[p]
 \centering
 
 % ==================== TABLE 1 ====================
@@ -504,7 +504,7 @@ Per-instance algorithm selection and sequential portfolios (e.g., \textsf{SATzil
 
 
 \subsection{Limitations}\label{sec:limits}
-Three limitations bound the claims above. First, and most important, \textbf{the five signal domains were selected post hoc} from the same full-suite runs that produced the suite-wide analysis. The pre-registered A/B establishes that the effect on those domains is \emph{reproducible} rather than run-to-run noise: the aggregate $+6$ recurs in both interleaved replicates with no negative per-domain cell, though the instance-level pattern varies (4 of the 8 distinct newly solved instances gain in both replicates). It does not make $+6$ an out-of-sample estimate. We claim that constraint-aware ordering helps reproducibly \emph{on these domains under this protocol}, not that a policy derived this way transfers to unseen ones; the suite-wide null is direct evidence that it would not. A clean test would pre-register the five domains and evaluate on instances withheld from the selection step. Second, although every task ran under the IPC optimal-track limits (1800\,s, 8\,GB, one core), coverage at a fixed time limit also depends on hardware speed and execution environment: our runs share one ${\sim}2016$-era multi-core server with 24--32 planners executing concurrently, whereas published figures come from newer, isolated cluster nodes -- and identical-code reruns in our own data differ by more than 20\% in runtime a third of the time, which near the time limit becomes coverage flips. Absolute totals here should therefore not be placed beside published IPC tables, and we lack a clean replicate from which to quantify the coverage resolution of cross-run comparisons; within-run contrasts, which cancel hardware and load, are the quantitatively meaningful ones. Third, the $k$-ordering ceiling projections are extrapolations calibrated on the measured two-ordering oracle, not measurements, and we treat them as such.
+Three limitations scope our claims. (i) The five signal domains were identified in the same full-suite runs used for the suite-wide analysis; the pre-registered A/B therefore establishes that the gain on \emph{these} domains is reproducible rather than noise, not that a policy derived this way would transfer to unseen domains. (ii) All tasks ran under the IPC optimal-track limits (1800\,s, 8\,GB, one core), but on a single shared multi-core server; since coverage at a fixed time limit also depends on hardware and load, absolute totals are not directly comparable across papers -- within-run contrasts, which cancel these factors, are the quantitatively meaningful ones. (iii) The $k$-ordering ceiling projections are model extrapolations, not measurements.
 
 \section{Conclusion \& Future Work}
 In this paper, we implemented and evaluated constraint-aware variable ordering inside \textsf{SymK} across the complete IPC optimal-STRIPS benchmark suite. Our inquiry delivers four primary outcomes:
