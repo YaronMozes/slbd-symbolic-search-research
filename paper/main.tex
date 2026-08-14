@@ -13,6 +13,7 @@
 \usepackage{hyperref}
 \usepackage{caption}
 \usepackage{mathtools}
+\usepackage{graphicx}
 
 % Color Palette - Formal academic with a modern, engaging twist
 \definecolor{primary}{HTML}{1E293B}     % Deep Slate Navy
@@ -120,7 +121,7 @@
 \maketitle
 
 \begin{abstract}
-\noindent Symbolic BDD-based search is a prominent paradigm for cost-optimal classical planning, with its performance heavily dictated by BDD sizes and, consequently, variable ordering algorithms. State-of-the-art planners such as \textsf{SymK} rely on causal-graph proximity heuristics (e.g., \textsf{GAMER}) but ignore the structural impact of mutex and invariant constraint BDDs conjoined at every search step. We introduce constraint-aware variable ordering - incorporating mutex and invariant co-occurrence edges into the \textsf{GAMER}-family linear arrangement objective - and evaluate its impact across the complete IPC optimal-STRIPS suite within \textsf{SymK} (IPC-2023). We show that a targeted per-domain policy strictly improves stock \textsf{SymK}'s coverage on its five target domains, replicated across independent runs, and yields substantial search acceleration in domains such as \textit{woodworking}. Suite-wide, however, enabling the ordering universally results in a tightly bounded null effect. In-depth diagnostic logging explains this discrepancy: while the ordering successfully shrinks transition relations, transition relation size is largely decoupled from search cost, which is instead dominated by peak search-BDD size. Finally, we highlight key methodological pitfalls, including regression to the mean in "hard instance" subsets, cross-year IPC duplicate leakage in domain-wise cross-validation, and a silent benchmark-harness defect detectable only through cross-planner optimal-cost agreement.
+\noindent Symbolic BDD-based search is a prominent paradigm for cost-optimal classical planning, with its performance heavily dictated by BDD sizes and, consequently, variable ordering algorithms. State-of-the-art planners such as \textsf{SymK} rely on causal-graph proximity heuristics (e.g., \textsf{GAMER}) but ignore the structural impact of mutex and invariant constraint BDDs conjoined at every search step. We introduce constraint-aware variable ordering - incorporating mutex and invariant co-occurrence edges into the \textsf{GAMER}-family linear arrangement objective - and evaluate its impact across the complete IPC optimal-STRIPS suite within \textsf{SymK} (IPC-2023). We show that a targeted per-domain policy strictly improves stock \textsf{SymK}'s coverage on its five target domains, replicated across independent runs, and yields substantial search acceleration in domains such as \textit{woodworking}. Suite-wide, however, enabling the ordering universally results in a tightly bounded null effect. In-depth diagnostic logging explains this discrepancy: while the ordering successfully shrinks transition relations, transition relation size is largely decoupled from search cost, which is instead dominated by peak search-BDD size. Finally, we highlight key methodological pitfalls, including regression to the mean in "hard instance" subsets and cross-year IPC duplicate leakage in domain-wise cross-validation.
 \end{abstract}
 
 \section{Introduction}
@@ -364,7 +365,12 @@ When $\mathcal{W}(d) = 0.0$, the constraint accumulation loop is bypassed comple
 
 \section{Results} \label{sec:res}
 
-We evaluate our constraint-aware variable ordering framework inside \textsf{SymK} across the complete International Planning Competition (IPC) optimal-STRIPS benchmark suite, comprising 66 domains and 1,847 instances. All experiments were conducted under standardized resource limits of 1800 seconds wall-clock time, 8\, GB RAM, and 1 CPU core per task. Our headline evaluation was strictly pre-registered before data collection. All suite-wide figures reported below use the repaired dataset described in Section~\ref{sec:harness}.
+We evaluate our constraint-aware variable ordering framework inside \textsf{SymK} across the complete International Planning Competition (IPC) optimal-STRIPS benchmark suite, comprising 66 domains and 1,847 instances. All experiments were conducted under standardized resource limits of 1800 seconds wall-clock time, 8\, GB RAM, and 1 CPU core per task. Our headline evaluation was strictly pre-registered before data collection. All suite-wide figures reported below use the repaired dataset.\footnote{Seven IPC
+domains ship one domain file per instance; an early version of our experiment
+driver mis-paired them, which depressed absolute coverage identically across all
+configurations and left every A/B delta intact. We repaired the pairing and
+re-ran all 230 affected instances; all numbers reported here use the repaired
+data, and \texttt{data/README.md} in the repository documents the merge.}
 
 \subsection{Confirmed Per-Domain Improvement (Pre-Registered A/B)}
 Initial full-suite exploratory runs identified strong, replicated positive signals on five specific domains: \textit{parking-opt14}, \textit{barman-opt11}, \textit{tpp}, \textit{woodworking-opt08}, and \textit{woodworking-opt11}. On \textit{woodworking}, varying the constraint weight $w_{\text{co}}$ exhibited a monotonic dose-response acceleration ($w=0.5 \to 0.87\times$, $w=1.0 \to 0.84\times$, $w=2.0 \to \mathbf{0.586\times}$ relative to stock, faster on 38/47 instances, exact Wilcoxon $p = 4 \cdot 10^{-7}$, sign test $p = 2.5 \cdot 10^{-5}$).
@@ -380,7 +386,7 @@ The pre-registered policy achieves an exact, replicated +6 coverage gain over st
 \subsection{Bounded Suite-Wide Null for Always-On Ordering}
 When constraint-aware variable ordering is enabled universally across all 66 domains, the suite-wide performance changes minimally. Across 1,847 benchmark instances, stock \textsf{SymK} solves 1145 instances, whereas the always-on constraint ordering solves 1139 instances.
 
-The overall coverage difference ($-6$ instances) lies well within our measured empirical protocol noise floor of $\pm 17$ instances (Section~\ref{sec:ceiling}). Discordant pairs show 13 gains versus 19 losses (exact sign test $p = 0.38$); restricting to the 1,617 instances untouched by the harness defect of Section~\ref{sec:harness} gives 12 versus 14 ($p = 0.85$), the same conclusion.
+The overall coverage difference ($-6$ instances) lies well within our measured empirical protocol noise floor of $\pm 17$ instances (Section~\ref{sec:ceiling}). Discordant pairs show 13 gains versus 19 losses (exact sign test $p = 0.38$); restricting to the 1,617 instances untouched by that defect gives 12 versus 14 ($p = 0.85$), the same conclusion.
 
 On commonly solved instances ($n = 1{,}126$), the wall-clock geometric mean ratio is 1.005 with a median of 1.000 and a domain-clustered 95\% confidence interval of [0.97, 1.05] (Table~\ref{tab:suitewide_results}). This tightly bounded zero excludes even a 5\% suite-wide effect.
 
@@ -392,10 +398,25 @@ By instrumenting our symbolic planner to log per-instance BDD node statistics at
 \begin{enumerate}\setlength{\itemsep}{1pt}
     \item Successful Design Target: The ordering successfully achieves its explicit design objective: Transition Relation (TR) node sizes shrink significantly (geometric mean ratio 0.867, median 0.954, reduced on 58.7\% of 1,361 active instances, exact $p \approx 3 \cdot 10^{-21}$).
     \item Invariance of Operative Bottlenecks: The ordering leaves peak search-BDD node sizes unchanged (geometric mean ratio 1.026, median 1.000, $p = 0.12, n=759$).
-    \item Decoupling of TR Size and Search Cost: TR node size is a poor proxy for runtime, whereas peak search-BDD size is the true operative bottleneck. The correlation between log TR size ratio and log runtime ratio is weak ($\rho = 0.202, R^2 \approx 0.04$), whereas peak search-BDD node ratio strongly predicts runtime ratio ($\rho = \mathbf{0.593}, p \approx 2 \cdot 10^{-69}$; both computed on the 718 active instances whose TR size changed, and $0.199$ / $0.580$ on all 759).
+    \item Decoupling of TR Size and Search Cost: TR node size is a poor proxy for runtime, whereas peak search-BDD size is the true operative bottleneck. The correlation between log TR size ratio and log runtime ratio is weak ($\rho = 0.202, R^2 \approx 0.04$), whereas peak search-BDD node ratio strongly predicts runtime ratio ($\rho = \mathbf{0.593}, p \approx 2 \cdot 10^{-69}$; both computed on the 718 active instances whose TR size changed, and $0.198$ / $0.582$ on all 759, as plotted in Figure~\ref{fig:mechanism}).
     \item Cost Asymmetry: On 36.7\% of active instances where the ordering increases TR size (median growth $1.20\times$), TR expansion incurs a higher runtime penalty (time ratio 1.211) than the speedup gained from TR compression (time ratio 0.946).
     \item Functional Scope: The method is a structural no-op on 25.6\% of benchmark instances (13 of 66 domains) due to the complete absence of cross-variable mutex groups.
 \end{enumerate}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{mechanism.pdf}
+\caption{\textbf{Why the ordering does not pay off: it moves the wrong quantity.}
+Each point is one instance on which the method is active and both configurations
+solve ($n = 759$); axes are log ratios of constraint-aware ordering to the
+\textsf{GAMER} baseline, with the least-squares trend in black. \textbf{Left:}
+the transition-relation size the objective actually optimizes barely predicts
+runtime ($\rho = 0.198$) -- a diffuse cloud around a nearly flat trend.
+\textbf{Right:} peak search-BDD size, which the ordering leaves essentially
+unchanged, predicts runtime strongly ($\rho = 0.582$). Shrinking the transition
+relation is not shrinking the search.}
+\label{fig:mechanism}
+\end{figure*}
 
 \begin{insightbox}[Core Empirical Discovery: Shrinking TR $\neq$ Shrinking Search]
 Optimizing variable ordering for mutex co-occurrence reliably shrinks Transition Relations (TRs) by 13.3\%. However, TR size correlates weakly with search runtime ($\rho = 0.202$). Search runtime is instead strictly governed by peak search-BDD node count ($\rho = 0.593$), which the ordering leaves uncompressed.
@@ -406,27 +427,20 @@ Optimizing variable ordering for mutex co-occurrence reliably shrinks Transition
 We investigated whether algorithm selection, restart schedules, or portfolio wrappers could extract suite-wide gains from constraint-aware variable orderings. We established several theoretical and empirical ceiling bounds:
 
 \begin{itemize}\setlength{\itemsep}{2pt}
-    \item Protocol Resolution Limit: Replicate analysis across 290 same-batch pairs reveals an intrinsic runtime variance of $\text{sd}(\log \text{runtime}) = 0.196$, with 29\% of identical-configuration runs differing by $>20\%$ and coverage drifting by up to 28 instances between full suite runs. This imposes a strict $\pm 17$-instance resolution ceiling for suite-wide coverage claims.
+    \item Protocol Resolution Limit: Replicate analysis across 290 same-batch pairs reveals an intrinsic runtime variance of $\text{sd}(\log \text{runtime}) = 0.196$, with 29\% of identical-configuration runs differing by $>20\%$ and coverage drifting by up to 28 instances between full suite runs. This imposes a strict $\pm 17$-instance resolution ceiling for suite-wide coverage claims -- a bound we confirmed the hard way: an earlier 551-instance sample suggested a $+3$ suite-wide gain that did not replicate at full scale. Suite-wide coverage differences below this floor should not be trusted regardless of their apparent direction.
     \item Oracle Bound: An ideal 2-ordering oracle selector yields a theoretical coverage gain of +12 instances, which sits entirely below the $\pm 17$-instance noise floor. Calibrated models for $k$-ordering oracles yield +20 ($k=3$), +24 ($k=4$), +29 ($k=6$), and +33 ($k=8$) instances; practical selectors capturing $\sim \frac{1}{3}$ of oracle value cannot achieve statistically detectable suite-wide wins.
     \item Restart Schedules: In sequential budget-splitting tests under an 1800\,s limit, zero stock-unsolved instances are rescued by the constraint ordering within 600\,s, while 48 solved instances require $>900\,\text{s}$. Consequently, all tested budget splits reduce overall coverage.
     \item TR-Probe Selection: A build-time probe selector evaluating initial TR node size selects the correct ordering 70.8\% of the time \emph{when it deviates from stock} ($p = 5.4 \cdot 10^{-4}$, replicated at 71.2\%). Measured end-to-end, however, the probe tax dominates: the selector is \textbf{18.4\% slower} than stock in wall-clock (Table~\ref{tab:suitewide_results}), and no configuration in a 150-point parameter sweep is net-positive. Its nominal $+5$ coverage (1150 vs.\ 1145) lies well inside the $\pm 17$-instance noise floor and is not a claim we make.
 \end{itemize}
 
 \subsection{Methodological Findings}
-Our investigation revealed four methodological insights for automated planning evaluations:
+Our investigation revealed two methodological insights for automated planning evaluations:
 
 \subsubsection{Demonstration of Regression to the Mean}
 Selecting "hard" instances based on baseline runtime artificially skews comparative speedup claims. Filtering instances where stock \textsf{SymK} takes $>10\,\text{s}$ makes constraint ordering appear 20\% faster (runtime ratio 0.796). Conversely, filtering by constraint ordering runtime makes it appear 6\% slower (ratio 1.064). A symmetric estimator yields a true ratio of 0.908 (54.5\% win rate). Standard asymmetric "hard instance" subsetting produces pure regression-to-the-mean artifacts.
 
 \subsubsection{IPC Cross-Year Duplicate Leakage}
 Evaluating static machine learning selectors via leave-one-domain-out cross-validation produced an apparent model fit of $R^2 = 0.30$. However, performance collapsed to $R^2 = -0.05$ under leave-one-\textit{family}-out cross-validation. Forensic analysis revealed that the IPC benchmark suite contains 299 cross-year duplicate instances (108 bit-identical tasks across 123 duplicate sets) that leak across domain splits, necessitating rigorous deduplication before learning.
-
-\subsubsection{Small-Sample Optimism in Suite-Wide Estimates}
-An earlier internal evaluation on a smaller sample (551 instances, 18 domains) suggested the weight-fixed combined ordering strictly dominated stock \textsf{SymK} suite-wide (+3 net coverage). This did not replicate at the full 1{,}847-instance scale (Table~\ref{tab:suitewide_results}), underscoring that suite-wide coverage claims below our measured $\pm 17$-instance noise floor should not be trusted regardless of their apparent direction, reinforcing the case for the pre-registered, domain-targeted protocol used for our confirmed result.
-
-\subsubsection{A Silent Benchmark-Harness Defect}
-\label{sec:harness}
-Seven IPC domains ship one domain file per instance (e.g.\ \texttt{p01-domain.pddl} for \textit{airport}). Our experiment driver failed to match these naming conventions and fell back to the first domain file in the directory, silently pairing instances with the \emph{wrong} domain. The defect caused 225 instances to fail within ${\sim}0.17\,\text{s}$ in all configurations and -- the diagnostic tell -- three instances to report plan costs \emph{below} the known optimum, because a mis-paired but syntactically valid domain yields a genuinely optimal plan for the wrong task. Because the pairing was identical across configurations, every A/B delta remained intact, but absolute coverage was depressed (stock \textsf{SymK} $1021 \to 1145$ after repair). We re-ran all 230 affected instances under corrected pairing and report only repaired data. We recommend cross-planner optimal-cost agreement as a cheap tripwire: an impossible cost is a far louder signal of harness corruption than a missing solution.
 
 \begin{table*}[t]
 \centering
@@ -469,7 +483,7 @@ Integrity: Plan Optimality & 0 Cost Mismatches & \textbf{0 / 480 Cost Mismatches
 \vspace{2.5em}
 
 % ==================== TABLE 3 ====================
-\caption{Suite-wide performance across all 1,847 IPC optimal-STRIPS instances (repaired dataset, Section~\ref{sec:harness}). Time ratios are \textbf{wall-clock relative to stock}, including all selector probe overhead, over instances solved by both the row configuration and stock; intervals are domain-clustered bootstrap 95\% CIs. The selector's search-only ratio, which excludes its probe tax, is 0.992 -- its entire deficit is probe overhead.}
+\caption{Suite-wide performance across all 1,847 IPC optimal-STRIPS instances (repaired dataset). Time ratios are \textbf{wall-clock relative to stock}, including all selector probe overhead, over instances solved by both the row configuration and stock; intervals are domain-clustered bootstrap 95\% CIs. The selector's search-only ratio, which excludes its probe tax, is 0.992 -- its entire deficit is probe overhead.}
 \label{tab:suitewide_results}
 \small
 \begin{tabular}{lccccc}
@@ -503,7 +517,6 @@ Furthermore, our methodological findings contribute important cautionary lessons
 \begin{enumerate}\setlength{\itemsep}{1pt}
     \item \textbf{Regression to the Mean:} We demonstrated that evaluating runtime speedups strictly on "hard" instances filtered by baseline performance introduces severe selection bias, turning neutral performance into an apparent 20\% speedup.
     \item \textbf{Cross-Year Duplicate Leakage:} We identified 299 cross-year duplicate instances in the IPC benchmark suite, proving that domain-wise cross-validation leaks information across splits and inflates learned selector metrics ($R^2 = 0.30 \to -0.05$ under deduplication).
-    \item \textbf{Cost-Agreement Tripwires:} Cross-planner optimal-cost agreement exposed a silent benchmark-harness defect that missing-solution counts alone would not have revealed (Section~\ref{sec:harness}).
 \end{enumerate}
 Variable ordering was not our first target: we first explored search-control alternatives, including landmark-guided direction selection for bidirectional symbolic search, meet-in-the-middle BDD-overlap signals, and forward-reachability pruning of the backward frontier, all of which we found to be net-neutral or actively harmful, ultimately pointing us toward the variable-ordering lever explored in this paper.
 
@@ -517,7 +530,7 @@ In this paper, we implemented and evaluated constraint-aware variable ordering i
 
     \item \textbf{Mechanism Uncovering:} Diagnostic logging reveals the root cause: the ordering systematically compresses Transition Relation (TR) node sizes by 13.3\% ($p \approx 3 \cdot 10^{-21}$), but TR size is decoupled from search cost ($\rho = 0.202, R^2 \approx 0.04$), which is instead dictated by peak search-BDD size ($\rho = 0.593$).
 
-    \item \textbf{Ceiling Bounds \& Methodological Insights:} Empirical protocols establish a $\pm 17$-instance resolution limit, proving why portfolios and selection wrappers cannot yield suite-wide gains, while highlighting critical traps in hard-instance subsetting, IPC duplicate leakage, and silent harness defects.
+    \item \textbf{Ceiling Bounds \& Methodological Insights:} Empirical protocols establish a $\pm 17$-instance resolution limit, proving why portfolios and selection wrappers cannot yield suite-wide gains, while highlighting critical traps in hard-instance subsetting and IPC duplicate leakage.
 \end{itemize}
 
 \subsection{Future Directions}
